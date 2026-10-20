@@ -90,6 +90,11 @@ class AccountAPI: ObservableObject {
         guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
     }
 
+    func cardDelete(id: Int) async throws {
+        let r: SimpleResp = try await post(action: "admin_delete_card", params: ["id": String(id)])
+        guard r.ok else { throw APIError.server(r.error ?? "删除失败") }
+    }
+
     // MARK: - 应用更新（app-update.php，与账号管理共用密码）
 
     func fetchLatest() async -> LatestRelease? {

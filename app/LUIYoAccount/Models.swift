@@ -151,7 +151,7 @@ struct CardItem: Decodable, Identifiable {
     var createdText: String {
         guard createdAt > 0 else { return "—" }
         let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
+        f.dateFormat = "yyyy-MM-dd HH:mm"
         f.timeZone = TimeZone(identifier: "Asia/Shanghai")
         return f.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt)))
     }

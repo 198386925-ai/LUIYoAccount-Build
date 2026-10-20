@@ -8,6 +8,7 @@ struct CardsView: View {
     @State private var countText = "10"
     @State private var daysText = "30"
     @State private var remarkText = ""
+    @State private var deleteTarget: CardItem?
     @State private var newCodes: [String] = []
     @State private var generating = false
     @State private var error: String?
@@ -72,53 +73,23 @@ struct CardsView: View {
                     }
                 }
 
-                Section("全部卡密（\(cards.count)）") {
-                    if cards.isEmpty {
-                        Text("暂无卡密")
+                Section("已使用（\(usedCards.count)）") {
+                    if usedCards.isEmpty {
+                        Text("暂无已使用的卡密")
                             .foregroundColor(.secondary)
                     }
-                    ForEach(cards) { card in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(card.code)
-                                    .font(.system(.footnote, design: .monospaced))
-                                Spacer()
-                                statusBadge(card)
-                            }
-                            if !card.remark.isEmpty {
-                                Text("备注：" + card.remark)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            Text(detailLine(card))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            if card.isBound {
-                                Text("绑定账号：" + card.boundEmail)
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                                if !card.boundUdid.isEmpty {
-                                    Text("UDID：" + card.boundUdid)
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                        .textSelection(.enabled)
-                                }
-                                if card.boundAt > 0 {
-                                    Text("绑定时间：" + card.boundAtText)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            HStack(spacing: 16) {
-                                Button("复制") { UIPasteboard.general.string = card.code }
-                                Button(card.disabled ? "恢复" : "作废") {
-                                    Task { await toggle(card) }
-                                }
-                                .foregroundColor(card.disabled ? .green : .red)
-                            }
-                            .font(.footnote)
-                        }
-                        .padding(.vertical, 2)
+                    ForEach(usedCards) { card in
+                        usedRow(card)
+                    }
+                }
+
+                Section("未使用（\(unusedCards.count)）") {
+                    if unusedCards.isEmpty {
+                        Text("暂无未使用的卡密")
+                            .foregroundColor(.secondary)
+                    }
+                    ForEach(unusedCards) { card in
+                        unusedRow(card)
                     }
                 }
             }
@@ -135,6 +106,110 @@ struct CardsView: View {
             .alert("完成", isPresented: .constant(notice != nil)) {
                 Button("好") { notice = nil }
             } message: { Text(notice ?? "") }
+            .confirmationDialog("删除这张卡密？", isPresented: .constant(deleteTarget != nil), titleVisibility: .visible) {
+                Button("删除", role: .destructive) {
+                    if let t = deleteTarget { Task { await delete(t) } }
+                    deleteTarget = nil
+                }
+                Button("取消", role: .cancel) { deleteTarget = nil }
+            } message: {
+                Text(deleteTarget?.code ?? "")
+            }
+        }
+    }
+
+    private var usedCards: [CardItem] { cards.filter { $0.isBound } }
+    private var unusedCards: [CardItem] { cards.filter { !$0.isBound } }
+
+    private func usedRow(_ card: CardItem) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(card.code)
+                    .font(.system(.footnote, design: .monospaced))
+                Spacer()
+                statusBadge(card)
+            }
+            if !card.remark.isEmpty {
+                Text("备注：" + card.remark)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            copyLine("账号", card.boundEmail, color: .green)
+            if !card.boundUdid.isEmpty {
+                copyLine("UDID", card.boundUdid, mono: true)
+            } else {
+                Text("UDID：未获取")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Text("时长 " + card.daysText + " · 生成于 " + card.createdText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            if card.boundAt > 0 {
+                Text("绑定时间：" + card.boundAtText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            actionRow(card)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func unusedRow(_ card: CardItem) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(card.code)
+                    .font(.system(.footnote, design: .monospaced))
+                Spacer()
+                statusBadge(card)
+            }
+            if !card.remark.isEmpty {
+                Text("备注：" + card.remark)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            Text(detailLine(card))
+                .font(.caption)
+                .foregroundColor(.secondary)
+            actionRow(card)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func copyLine(_ label: String, _ value: String, mono: Bool = false, color: Color = .primary) -> some View {
+        HStack(spacing: 8) {
+            Text(label + "：" + value)
+                .font(mono ? .system(.caption2, design: .monospaced) : .caption)
+                .foregroundColor(color)
+                .lineLimit(1)
+            Button("复制") {
+                UIPasteboard.general.string = value
+                notice = "已复制" + label
+            }
+            .font(.caption)
+        }
+    }
+
+    private func actionRow(_ card: CardItem) -> some View {
+        HStack(spacing: 16) {
+            Button("复制卡密") { UIPasteboard.general.string = card.code }
+            Button(card.disabled ? "恢复" : "作废") {
+                Task { await toggle(card) }
+            }
+            .foregroundColor(card.disabled ? .green : .orange)
+            Button("删除") { deleteTarget = card }
+                .foregroundColor(.red)
+        }
+        .font(.footnote)
+    }
+
+    private func delete(_ card: CardItem) async {
+        do {
+            try await api.cardDelete(id: card.id)
+            notice = "已删除"
+            await load()
+        } catch {
+            if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
     }
 

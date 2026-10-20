@@ -423,7 +423,7 @@ if ($action === 'status') {
 }
 
 // ============ 管理员接口 ============
-if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card'], true)) {
+if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card', 'admin_delete_card'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
         $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
@@ -474,7 +474,7 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
         resp(true, ['codes' => $codes, 'count' => count($codes), 'days' => $days, 'remark' => $remark]);
     }
     if ($action === 'admin_list_cards') {
-        $st = $db->query("SELECT l.id, l.code_plain, l.disabled, l.days, l.created_at, l.remark, l.bound_user_id, l.bound_email, l.bound_at, (SELECT email FROM users WHERE license_id=l.id LIMIT 1) AS fb_email, (SELECT udid FROM users WHERE id=l.bound_user_id) AS udid1, (SELECT udid FROM users WHERE license_id=l.id LIMIT 1) AS udid2 FROM licenses l WHERE l.code_plain <> '' ORDER BY l.id DESC LIMIT 300");
+        $st = $db->query("SELECT l.id, l.code_plain, l.disabled, l.days, l.created_at, l.remark, l.bound_user_id, l.bound_email, l.bound_at, (SELECT email FROM users WHERE license_id=l.id LIMIT 1) AS fb_email, (SELECT udid FROM users WHERE id=l.bound_user_id) AS udid1, (SELECT udid FROM users WHERE license_id=l.id LIMIT 1) AS udid2 FROM licenses l WHERE l.code_plain <> '' ORDER BY l.id DESC");
         $cards = [];
         while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
             $be = !empty($r['bound_email']) ? $r['bound_email'] : ($r['fb_email'] ?? '');
@@ -485,6 +485,11 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
                         'bound_udid' => $bu, 'bound_at' => (int)($r['bound_at'] ?? 0)];
         }
         resp(true, ['cards' => $cards, 'total' => count($cards)]);
+    }
+    if ($action === 'admin_delete_card') {
+        $cid = (int)($in['id'] ?? 0);
+        $db->prepare("DELETE FROM licenses WHERE id=?")->execute([$cid]);
+        resp(true, ['msg' => '已删除']);
     }
     if ($action === 'admin_disable_card') {
         $cid = (int)($in['id'] ?? 0); $dis = (int)($in['disabled'] ?? 1);

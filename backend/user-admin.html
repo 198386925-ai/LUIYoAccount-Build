@@ -97,27 +97,38 @@ function copyGen(){
   t.select(); document.execCommand('copy');
   document.getElementById('genMsg').textContent='已复制 '+t.value.split('\n').length+' 张卡密';
 }
+function cpText(t){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+function cardRow(c,used){
+  const st=c.disabled?'<span class="tag ban">已作废</span>':(used?'<span class="tag svip">已绑定</span>':'<span class="tag free">未使用</span>');
+  let h='<div class="u"><b style="font-family:monospace;font-size:13px">'+c.code+'</b> '+st
+    +' <button class="gray" data-v="'+c.code+'" onclick="cpText(this.dataset.v)">复制卡密</button><br>'
+    +(c.remark?'<small><b>备注：'+c.remark+'</b></small><br>':'');
+  if(used){
+    h+='<small style="color:green">账号：'+c.bound_email+'</small> <button class="gray" data-v="'+c.bound_email+'" onclick="cpText(this.dataset.v)">复制</button><br>'
+      +(c.bound_udid?'<small style="font-family:monospace">UDID：'+c.bound_udid+'</small> <button class="gray" data-v="'+c.bound_udid+'" onclick="cpText(this.dataset.v)">复制</button><br>':'<small>UDID：未获取</small><br>');
+  }
+  h+='<small>'+(c.days>=36500?'永久':c.days+' 天')+' · 生成于 '+new Date(c.created_at*1000).toLocaleString()
+    +(used&&c.bound_at?' · 绑定于 '+new Date(c.bound_at*1000).toLocaleString():'')+'</small><br>'
+    +(c.disabled
+      ?'<button class="green" onclick="disableCard('+c.id+',0)">恢复</button>'
+      :'<button class="red" onclick="disableCard('+c.id+',1)">作废</button>')
+    +' <button class="red" onclick="deleteCard('+c.id+')">删除</button>'
+    +'</div>';
+  return h;
+}
 async function loadCards(){
   const d=await post('admin_list_cards');
   const el=document.getElementById('cardList');
   if(!d.ok){el.innerHTML='<small>'+(d.error||'加载失败')+'</small>';return;}
-  let h='<small>共 '+d.total+' 张（最新在前）</small>';
-  d.cards.forEach(c=>{
-    const st=c.disabled?'<span class="tag ban">已作废</span>':(c.bound_email?'<span class="tag svip">已绑定</span>':'<span class="tag free">未使用</span>');
-    h+='<div class="u"><b style="font-family:monospace;font-size:13px">'+c.code+'</b> '+st+'<br>'
-      +(c.remark?'<small><b>备注：'+c.remark+'</b></small><br>':'')
-      +'<small>'+(c.days>=36500?'永久':c.days+' 天')+' · 生成于 '+new Date(c.created_at*1000).toLocaleString()+'</small><br>'
-      +(c.bound_email?'<small style="color:green">绑定账号：'+c.bound_email+'</small><br>'
-        +(c.bound_udid?'<small style="font-family:monospace">UDID：'+c.bound_udid+'</small><br>':'')
-        +(c.bound_at?'<small>绑定时间：'+new Date(c.bound_at*1000).toLocaleString()+'</small><br>':''):'')
-      +(c.disabled
-        ?'<button class="green" onclick="disableCard('+c.id+',0)">恢复</button>'
-        :'<button class="red" onclick="disableCard('+c.id+',1)">作废</button>')
-      +'</div>';
-  });
-  el.innerHTML=h||'<small>暂无卡密</small>';
+  const used=d.cards.filter(c=>c.bound_email), free=d.cards.filter(c=>!c.bound_email);
+  let h='<h4 style="margin:6px 0">已使用（'+used.length+'）</h4>';
+  h+=used.length?used.map(c=>cardRow(c,true)).join(''):'<small>暂无</small>';
+  h+='<h4 style="margin:10px 0 6px">未使用（'+free.length+'）</h4>';
+  h+=free.length?free.map(c=>cardRow(c,false)).join(''):'<small>暂无</small>';
+  el.innerHTML=h;
 }
 async function disableCard(id,dis){const d=await post('admin_disable_card',{id:id,disabled:dis}); alert(d.msg||d.error); loadCards();}
+async function deleteCard(id){if(!confirm('确定删除这张卡密？删了就没了'))return;const d=await post('admin_delete_card',{id:id}); alert(d.msg||d.error); loadCards();}
 // ---- 应用更新 ----
 const UPD='app-update.php';
 document.getElementById('feedUrl').textContent=location.origin+'/updates/latest.json';
