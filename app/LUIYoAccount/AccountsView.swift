@@ -58,6 +58,12 @@ struct AccountsView: View {
                             }
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            if !u.udid.isEmpty {
+                                Text("UDID " + u.udid)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .textSelection(.enabled)
+                            }
                             HStack {
                                 Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
                                 Spacer()

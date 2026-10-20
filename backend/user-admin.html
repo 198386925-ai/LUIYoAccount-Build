@@ -60,6 +60,7 @@ async function load(){
       +(u.ip_flagged==1?'<span class="tag flag">IP异常</span>':'')+'<br>'
       +'<small>注册 '+new Date(u.created_at*1000).toLocaleString()+' · 最后登录 '+(u.last_login_at?new Date(u.last_login_at*1000).toLocaleString():'从未')
       +' · 越狱允许:'+(u.allow_jailbreak==1?'是':'否')+'</small><br>'
+      +(u.udid?'<small style="font-family:monospace;color:#666">UDID: '+u.udid+'</small><br>':'')
       +(u.is_banned==1
         ?'<button class="green" onclick="ban(\''+u.email+'\',0)">解封</button>'
         :'<button class="red" onclick="ban(\''+u.email+'\',1)">封禁</button>')

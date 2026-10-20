@@ -98,7 +98,15 @@ foreach ([
     'locked_until'   => "ALTER TABLE users ADD COLUMN locked_until INTEGER DEFAULT 0",
     'ip_flagged'     => "ALTER TABLE users ADD COLUMN ip_flagged INTEGER DEFAULT 0",
     'allow_jailbreak'=> "ALTER TABLE users ADD COLUMN allow_jailbreak INTEGER DEFAULT 0",
+    'udid'           => "ALTER TABLE users ADD COLUMN udid TEXT DEFAULT ''",
 ] as $c => $sql) if (!in_array($c, $cols)) $db->exec($sql);
+$db->exec("CREATE TABLE IF NOT EXISTS udid_enroll (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL
+)");
 
 // ---------- 工具 ----------
 function resp($ok, $data = []) { echo json_encode(array_merge(['ok' => $ok], $data), JSON_UNESCAPED_UNICODE); exit; }
@@ -168,6 +176,62 @@ if ($action === 'confirm_device') {
 }
 
 // ============ 发送验证码 ============
+// ---------- UDID 获取（描述文件方式，浏览器/设备直连） ----------
+if ($action === 'udid_profile') {
+    $t = trim($_GET['t'] ?? '');
+    $st = $db->prepare("SELECT * FROM udid_enroll WHERE token=? AND used=0 AND expires_at>?");
+    $st->execute([$t, time()]);
+    if (!$st->fetch()) { http_response_code(404); echo '链接已过期，请回 App 重新获取'; exit; }
+    $self = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
+    $recv = htmlspecialchars($self . '?action=udid_receive&t=' . $t, ENT_XML1);
+    $uuid = strtoupper(sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+        random_int(0,0xffff), random_int(0,0xffff), random_int(0,0xffff),
+        random_int(0,0x0fff)|0x4000, random_int(0,0x3fff)|0x8000,
+        random_int(0,0xffff), random_int(0,0xffff), random_int(0,0xffff)));
+    header_remove('Content-Type');
+    header('Content-Type: application/x-apple-aspen-config; charset=utf-8');
+    header('Content-Disposition: attachment; filename="LUIYo-UDID.mobileconfig"');
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' . "\n";
+    echo '<plist version="1.0"><dict>'
+        . '<key>PayloadContent</key><dict>'
+        . '<key>DeviceAttributes</key><array><string>UDID</string><string>PRODUCT</string><string>VERSION</string><string>SERIAL</string></array>'
+        . '<key>URL</key><string>' . $recv . '</string>'
+        . '</dict>'
+        . '<key>PayloadDisplayName</key><string>LUIYo 设备绑定</string>'
+        . '<key>PayloadDescription</key><string>把本机 UDID 绑定到你的 LUIYo 账号，安装后自动完成</string>'
+        . '<key>PayloadIdentifier</key><string>com.luiyo.udid.enroll</string>'
+        . '<key>PayloadType</key><string>Profile Service</string>'
+        . '<key>PayloadUUID</key><string>' . $uuid . '</string>'
+        . '<key>PayloadVersion</key><integer>1</integer>'
+        . '</dict></plist>';
+    exit;
+}
+
+if ($action === 'udid_receive') {
+    $t = trim($_GET['t'] ?? '');
+    $raw = file_get_contents('php://input');
+    $udid = '';
+    if (preg_match('/<key>UDID<\/key>\s*<string>([^<]+)<\/string>/', $raw, $m)) $udid = trim($m[1]);
+    $st = $db->prepare("SELECT * FROM udid_enroll WHERE token=? AND used=0 AND expires_at>?");
+    $st->execute([$t, time()]);
+    $row = $st->fetch();
+    if ($row && $udid !== '') {
+        $db->prepare("UPDATE users SET udid=? WHERE id=?")->execute([$udid, $row['user_id']]);
+        $db->prepare("UPDATE udid_enroll SET used=1 WHERE token=?")->execute([$t]);
+    }
+    $self = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
+    header('Location: ' . $self . '?action=udid_done', true, 301);
+    exit;
+}
+
+if ($action === 'udid_done') {
+    header_remove('Content-Type');
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system;text-align:center;padding:60px 20px"><h2>✅ UDID 已绑定</h2><p>回到 LUIYo App 刷新即可看到本机 UDID。</p></body>';
+    exit;
+}
+
 if ($action === 'send_code') {
     $email = strtolower(trim($in['email'] ?? ''));
     $purpose = $in['purpose'] ?? 'register';
@@ -314,6 +378,33 @@ if ($action === 'bind_card') {
 }
 
 // ============ 查账号状态（App 心跳） ============
+// 生成一次性 UDID 获取链接（10 分钟有效），主 App 打开后走 Safari 安装描述文件
+if ($action === 'udid_enroll') {
+    $token = trim($in['token'] ?? '');
+    $st = $db->prepare("SELECT * FROM users WHERE current_device_id=?");
+    $st->execute([$token]);
+    $u = $st->fetch();
+    if (!$u) resp(false, ['error' => '未登录']);
+    $t = bin2hex(random_bytes(16));
+    $db->prepare("INSERT INTO udid_enroll (token,user_id,expires_at,used,created_at) VALUES (?,?,?,0,?)")
+       ->execute([$t, $u['id'], time() + 600, time()]);
+    $self = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
+    resp(true, ['profile_url' => $self . '?action=udid_profile&t=' . $t, 'expires_in' => 600]);
+}
+
+// 主 App 直接上报 UDID（签名描述文件里能读到时用）
+if ($action === 'report_udid') {
+    $token = trim($in['token'] ?? '');
+    $udid = trim($in['udid'] ?? '');
+    if (!preg_match('/^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$/', $udid)) resp(false, ['error' => 'UDID 格式不正确']);
+    $st = $db->prepare("SELECT * FROM users WHERE current_device_id=?");
+    $st->execute([$token]);
+    $u = $st->fetch();
+    if (!$u) resp(false, ['error' => '未登录']);
+    $db->prepare("UPDATE users SET udid=? WHERE id=?")->execute([$udid, $u['id']]);
+    resp(true, ['ok' => true, 'udid' => $udid]);
+}
+
 if ($action === 'status') {
     $token = trim($in['token'] ?? $_GET['token'] ?? '');
     $st = $db->prepare("SELECT * FROM users WHERE current_device_id=?");
@@ -322,14 +413,14 @@ if ($action === 'status') {
     if (!$u) resp(false, ['error' => '未登录', 'logged_out' => true]);
     if ($u['is_banned']) resp(true, ['banned' => true, 'reason' => $u['ban_reason']]);
     $svip = $u['svip_expires_at'] > $now;
-    resp(true, ['email' => $u['email'], 'svip' => $svip, 'svip_expires_at' => (int)$u['svip_expires_at'], 'banned' => false]);
+    resp(true, ['email' => $u['email'], 'svip' => $svip, 'svip_expires_at' => (int)$u['svip_expires_at'], 'banned' => false, 'udid' => $u['udid'] ?? '']);
 }
 
 // ============ 管理员接口 ============
 if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
-        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
+        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
         $list = [];
         while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $r['svip'] = $r['svip_expires_at'] > $now; $list[] = $r; }
         resp(true, ['users' => $list, 'total' => count($list)]);

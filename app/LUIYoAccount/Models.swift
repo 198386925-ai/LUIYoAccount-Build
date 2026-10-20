@@ -9,6 +9,7 @@ struct AccountUser: Decodable, Identifiable {
     let svip: Bool
     let svipExpiresAt: Int
     let ipFlagged: Bool
+    let udid: String
     let allowJailbreak: Bool
     let createdAt: Int
     let lastLoginAt: Int
@@ -19,6 +20,7 @@ struct AccountUser: Decodable, Identifiable {
         case banReason = "ban_reason"
         case svipExpiresAt = "svip_expires_at"
         case ipFlagged = "ip_flagged"
+        case udid
         case allowJailbreak = "allow_jailbreak"
         case createdAt = "created_at"
         case lastLoginAt = "last_login_at"
