@@ -106,3 +106,56 @@ struct UploadResp: Decodable {
     let error: String?
     let name: String?
 }
+
+// MARK: - 卡密（licenses，admin_gen_cards / admin_list_cards）
+struct CardItem: Decodable, Identifiable {
+    let id: Int
+    let code: String
+    let disabled: Bool
+    let days: Int
+    let createdAt: Int
+    let boundEmail: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, code, disabled, days
+        case createdAt = "created_at"
+        case boundEmail = "bound_email"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(Int.self, forKey: .id)) ?? 0
+        code = (try? c.decode(String.self, forKey: .code)) ?? ""
+        if let b = try? c.decode(Bool.self, forKey: .disabled) { disabled = b }
+        else if let i = try? c.decode(Int.self, forKey: .disabled) { disabled = i != 0 }
+        else { disabled = false }
+        days = (try? c.decode(Int.self, forKey: .days)) ?? 30
+        createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
+        boundEmail = (try? c.decode(String.self, forKey: .boundEmail)) ?? ""
+    }
+
+    var isBound: Bool { !boundEmail.isEmpty }
+    var daysText: String { days >= 36500 ? "永久" : "\(days) 天" }
+    var createdText: String {
+        guard createdAt > 0 else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt)))
+    }
+}
+
+struct CardsResp: Decodable {
+    let ok: Bool
+    let error: String?
+    let cards: [CardItem]?
+    let total: Int?
+}
+
+struct GenCardsResp: Decodable {
+    let ok: Bool
+    let error: String?
+    let codes: [String]?
+    let count: Int?
+    let days: Int?
+}

@@ -140,7 +140,7 @@ struct AccountsView: View {
         do {
             list = try await api.accounts()
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
     }
 
@@ -151,7 +151,7 @@ struct AccountsView: View {
                 notice = "已生效"
                 await reload()
             } catch {
-                self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
             }
         }
     }

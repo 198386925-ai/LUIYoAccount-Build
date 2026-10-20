@@ -49,7 +49,7 @@ struct LoginView: View {
         do {
             try await api.login(password: password)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
     }
 }

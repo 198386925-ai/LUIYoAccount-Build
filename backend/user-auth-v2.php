@@ -64,6 +64,16 @@ $db->exec("CREATE TABLE IF NOT EXISTS email_codes (
     created_at INTEGER NOT NULL
 )");
 $db->exec("CREATE INDEX IF NOT EXISTS idx_email_codes ON email_codes(email, code)");
+// 卡密表（绑卡 + 后台生成共用；老库已有同名表时不覆盖，缺列在下方补）
+$db->exec("CREATE TABLE IF NOT EXISTS licenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_plain TEXT UNIQUE NOT NULL,
+    disabled INTEGER DEFAULT 0,
+    days INTEGER DEFAULT 30,
+    created_at INTEGER DEFAULT 0
+)");
+try { $db->exec("ALTER TABLE licenses ADD COLUMN days INTEGER DEFAULT 30"); } catch (Exception $e) {}
+try { $db->exec("ALTER TABLE licenses ADD COLUMN created_at INTEGER DEFAULT 0"); } catch (Exception $e) {}
 // v2 新表：设备确认 / 登录日志
 $db->exec("CREATE TABLE IF NOT EXISTS device_confirms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,8 +304,9 @@ if ($action === 'bind_card') {
     $st = $db->prepare("SELECT id FROM users WHERE license_id=? AND id!=?");
     $st->execute([$lic['id'], $u['id']]);
     if ($st->fetch(PDO::FETCH_ASSOC)) resp(false, ['error' => '这张卡密已被其他账号绑定']);
-    // SVIP 时长：默认 30 天（要改 90 天/永久改这一行：永久用 $expires = 4102444800）
-    $days = 30;
+    // SVIP 时长：按卡面天数（生成卡密时设定），没有天数的旧卡默认 30 天；days>=36500 视为永久
+    $days = !empty($lic['days']) ? (int)$lic['days'] : 30;
+    if ($days >= 36500) { $expires = 4102444800; $db->prepare("UPDATE users SET svip_expires_at=?, license_id=? WHERE id=?")->execute([$expires, $lic['id'], $u['id']]); resp(true, ['svip' => true, 'svip_expires_at' => $expires, 'days' => $days]); }
     $expires = $now + $days * 86400;
     if ($u['svip_expires_at'] > $now) $expires = $u['svip_expires_at'] + $days * 86400;
     $db->prepare("UPDATE users SET svip_expires_at=?, license_id=? WHERE id=?")->execute([$expires, $lic['id'], $u['id']]);
@@ -315,7 +326,7 @@ if ($action === 'status') {
 }
 
 // ============ 管理员接口 ============
-if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag'], true)) {
+if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
         $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
@@ -337,6 +348,42 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
     if ($action === 'admin_unflag') {
         $db->prepare("UPDATE users SET ip_flagged=0 WHERE email=?")->execute([$email]);
         resp(true, ['msg' => '已取消 IP 标红']);
+    }
+    // ---------- 卡密管理（生成 / 列表 / 作废） ----------
+    if ($action === 'admin_gen_cards') {
+        $count = max(1, min(100, (int)($in['count'] ?? 1)));
+        $days = max(1, min(36500, (int)($in['days'] ?? 30)));
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $codes = [];
+        $ins = $db->prepare("INSERT INTO licenses (code_plain, disabled, days, created_at) VALUES (?, 0, ?, ?)");
+        $guard = 0;
+        while (count($codes) < $count && $guard < $count * 30) {
+            $guard++;
+            $parts = [];
+            for ($p = 0; $p < 4; $p++) {
+                $seg = '';
+                for ($i = 0; $i < 5; $i++) $seg .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+                $parts[] = $seg;
+            }
+            $code = 'LUI-' . implode('-', $parts);
+            try { $ins->execute([$code, $days, $now]); $codes[] = $code; } catch (Exception $e) { /* 撞码重试 */ }
+        }
+        resp(true, ['codes' => $codes, 'count' => count($codes), 'days' => $days]);
+    }
+    if ($action === 'admin_list_cards') {
+        $st = $db->query("SELECT l.id, l.code_plain, l.disabled, l.days, l.created_at, (SELECT email FROM users WHERE license_id=l.id LIMIT 1) AS bound_email FROM licenses l ORDER BY l.id DESC LIMIT 300");
+        $cards = [];
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $cards[] = ['id' => (int)$r['id'], 'code' => $r['code_plain'], 'disabled' => (int)$r['disabled'],
+                        'days' => (int)($r['days'] ?? 30), 'created_at' => (int)($r['created_at'] ?? 0),
+                        'bound_email' => $r['bound_email'] ?? ''];
+        }
+        resp(true, ['cards' => $cards, 'total' => count($cards)]);
+    }
+    if ($action === 'admin_disable_card') {
+        $cid = (int)($in['id'] ?? 0); $dis = (int)($in['disabled'] ?? 1);
+        $db->prepare("UPDATE licenses SET disabled=? WHERE id=?")->execute([$dis, $cid]);
+        resp(true, ['msg' => $dis ? '已作废' : '已恢复']);
     }
 }
 

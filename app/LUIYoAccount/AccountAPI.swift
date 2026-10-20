@@ -4,13 +4,24 @@ enum APIError: LocalizedError {
     case server(String)
     case network(Error)
     case badResponse
+    case cancelled
 
     var errorDescription: String? {
         switch self {
         case .server(let m): return m
         case .network(let e): return "网络错误：\(e.localizedDescription)"
         case .badResponse: return "服务器返回异常"
+        case .cancelled: return "已取消"
         }
+    }
+}
+
+extension Error {
+    /// 请求被系统取消（页面切换/重复刷新）——不是真错误，不要弹窗打扰用户
+    var isCancelError: Bool {
+        if let e = self as? APIError, case .cancelled = e { return true }
+        if let e = self as? URLError, e.code == .cancelled { return true }
+        return false
     }
 }
 
@@ -60,6 +71,25 @@ class AccountAPI: ObservableObject {
         guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
     }
 
+    // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
+
+    func genCards(count: Int, days: Int) async throws -> [String] {
+        let r: GenCardsResp = try await post(action: "admin_gen_cards", params: ["count": String(count), "days": String(days)])
+        guard r.ok, let codes = r.codes else { throw APIError.server(r.error ?? "生成失败") }
+        return codes
+    }
+
+    func cards() async throws -> [CardItem] {
+        let r: CardsResp = try await post(action: "admin_list_cards", params: [:])
+        guard r.ok, let list = r.cards else { throw APIError.server(r.error ?? "获取失败") }
+        return list
+    }
+
+    func cardDisable(id: Int, disabled: Bool) async throws {
+        let r: SimpleResp = try await post(action: "admin_disable_card", params: ["id": String(id), "disabled": disabled ? "1" : "0"])
+        guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
+    }
+
     // MARK: - 应用更新（app-update.php，与账号管理共用密码）
 
     func fetchLatest() async -> LatestRelease? {
@@ -103,7 +133,9 @@ class AccountAPI: ObservableObject {
         req.httpBody = body
         let data: Data
         let resp: URLResponse
-        do { (data, resp) = try await URLSession.shared.data(for: req) } catch { throw APIError.network(error) }
+        do { (data, resp) = try await URLSession.shared.data(for: req) }
+        catch let e as URLError where e.code == .cancelled { throw APIError.cancelled }
+        catch { throw APIError.network(error) }
         guard let http = resp as? HTTPURLResponse else { throw APIError.badResponse }
         if http.statusCode == 401 { throw APIError.server("密码验证失败") }
         guard http.statusCode == 200 else { throw APIError.badResponse }
@@ -132,6 +164,8 @@ class AccountAPI: ObservableObject {
         let resp: URLResponse
         do {
             (data, resp) = try await URLSession.shared.data(for: req)
+        } catch let e as URLError where e.code == .cancelled {
+            throw APIError.cancelled
         } catch {
             throw APIError.network(error)
         }

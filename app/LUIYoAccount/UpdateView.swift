@@ -129,8 +129,10 @@ struct UpdateView: View {
             resultMsg = "✅ 已发布：\(r.name ?? "")"
             await loadLatest()
         } catch {
-            resultOK = false
-            resultMsg = "❌ " + error.localizedDescription
+            if !error.isCancelError {
+                resultOK = false
+                resultMsg = "❌ " + error.localizedDescription
+            }
         }
     }
 }

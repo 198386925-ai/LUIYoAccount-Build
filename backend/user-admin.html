@@ -20,6 +20,17 @@ small{color:#888}
 </div>
 <div class="card" id="list"><small>输密码后点加载</small></div>
 <div class="card">
+<h3 style="margin:4px 0 8px">生成卡密（绑定账号用）</h3>
+<input id="genCount" type="number" value="10" min="1" max="100" placeholder="生成数量（1-100）">
+<input id="genDays" type="number" value="30" min="1" placeholder="SVIP 天数（填 36500 = 永久）">
+<button onclick="genCards()">生成卡密</button>
+<button class="gray" onclick="loadCards()">刷新卡密列表</button>
+<div id="genMsg"></div>
+<textarea id="genOut" rows="6" style="width:100%;margin-top:8px;border:1px solid #ddd;border-radius:10px;padding:10px;font-size:13px;box-sizing:border-box" placeholder="生成的卡密会出现在这里"></textarea>
+<button class="green" onclick="copyGen()">复制生成的卡密</button>
+<div id="cardList" style="margin-top:8px"><small>卡密列表（生成后自动刷新）</small></div>
+</div>
+<div class="card">
 <h3 style="margin:4px 0 8px">应用更新（上传 IPA）</h3>
 <div id="curVer"><small>线上版本读取中…</small></div>
 <input id="ipaFile" type="file" accept=".ipa" onchange="ipaPicked()">
@@ -59,6 +70,7 @@ async function load(){
       +'</div>';
   });
   document.getElementById('list').innerHTML=h||'<small>暂无账号</small>';
+  loadCards();
 }
 async function ban(email,b){
   let reason=''; if(b===1){reason=prompt('封禁理由（可空）')||'';}
@@ -66,6 +78,40 @@ async function ban(email,b){
 }
 async function jb(email,a){const d=await post('admin_jailbreak',{email:email,allow:a}); alert(d.msg||d.error); load();}
 async function unflag(email){const d=await post('admin_unflag',{email:email}); alert(d.msg||d.error); load();}
+// ---- 卡密管理 ----
+async function genCards(){
+  const c=parseInt(document.getElementById('genCount').value)||1;
+  const dys=parseInt(document.getElementById('genDays').value)||30;
+  const d=await post('admin_gen_cards',{count:c,days:dys});
+  const msg=document.getElementById('genMsg');
+  if(!d.ok){msg.textContent=d.error||'生成失败';return;}
+  document.getElementById('genOut').value=d.codes.join('\n');
+  msg.textContent='✅ 已生成 '+d.count+' 张（每张 '+d.days+' 天）';
+  loadCards();
+}
+function copyGen(){
+  const t=document.getElementById('genOut'); if(!t.value)return;
+  t.select(); document.execCommand('copy');
+  document.getElementById('genMsg').textContent='已复制 '+t.value.split('\n').length+' 张卡密';
+}
+async function loadCards(){
+  const d=await post('admin_list_cards');
+  const el=document.getElementById('cardList');
+  if(!d.ok){el.innerHTML='<small>'+(d.error||'加载失败')+'</small>';return;}
+  let h='<small>共 '+d.total+' 张（最新在前）</small>';
+  d.cards.forEach(c=>{
+    const st=c.disabled?'<span class="tag ban">已作废</span>':(c.bound_email?'<span class="tag svip">已绑定</span>':'<span class="tag free">未使用</span>');
+    h+='<div class="u"><b style="font-family:monospace;font-size:13px">'+c.code+'</b> '+st+'<br>'
+      +'<small>'+(c.days>=36500?'永久':c.days+' 天')+' · 生成于 '+new Date(c.created_at*1000).toLocaleString()
+      +(c.bound_email?' · 绑定：'+c.bound_email:'')+'</small><br>'
+      +(c.disabled
+        ?'<button class="green" onclick="disableCard('+c.id+',0)">恢复</button>'
+        :'<button class="red" onclick="disableCard('+c.id+',1)">作废</button>')
+      +'</div>';
+  });
+  el.innerHTML=h||'<small>暂无卡密</small>';
+}
+async function disableCard(id,dis){const d=await post('admin_disable_card',{id:id,disabled:dis}); alert(d.msg||d.error); loadCards();}
 // ---- 应用更新 ----
 const UPD='app-update.php';
 document.getElementById('feedUrl').textContent=location.origin+'/updates/latest.json';
