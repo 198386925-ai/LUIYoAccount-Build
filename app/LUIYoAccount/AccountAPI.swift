@@ -73,8 +73,8 @@ class AccountAPI: ObservableObject {
 
     // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
 
-    func genCards(count: Int, days: Int) async throws -> [String] {
-        let r: GenCardsResp = try await post(action: "admin_gen_cards", params: ["count": String(count), "days": String(days)])
+    func genCards(count: Int, days: Int, remark: String) async throws -> [String] {
+        let r: GenCardsResp = try await post(action: "admin_gen_cards", params: ["count": String(count), "days": String(days), "remark": remark])
         guard r.ok, let codes = r.codes else { throw APIError.server(r.error ?? "生成失败") }
         return codes
     }

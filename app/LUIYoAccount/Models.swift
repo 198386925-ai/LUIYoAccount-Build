@@ -118,11 +118,17 @@ struct CardItem: Decodable, Identifiable {
     let days: Int
     let createdAt: Int
     let boundEmail: String
+    let remark: String
+    let boundUdid: String
+    let boundAt: Int
 
     enum CodingKeys: String, CodingKey {
         case id, code, disabled, days
         case createdAt = "created_at"
         case boundEmail = "bound_email"
+        case remark
+        case boundUdid = "bound_udid"
+        case boundAt = "bound_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -135,6 +141,9 @@ struct CardItem: Decodable, Identifiable {
         days = (try? c.decode(Int.self, forKey: .days)) ?? 30
         createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
         boundEmail = (try? c.decode(String.self, forKey: .boundEmail)) ?? ""
+        remark = (try? c.decode(String.self, forKey: .remark)) ?? ""
+        boundUdid = (try? c.decode(String.self, forKey: .boundUdid)) ?? ""
+        boundAt = (try? c.decode(Int.self, forKey: .boundAt)) ?? 0
     }
 
     var isBound: Bool { !boundEmail.isEmpty }
@@ -145,6 +154,13 @@ struct CardItem: Decodable, Identifiable {
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(identifier: "Asia/Shanghai")
         return f.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt)))
+    }
+    var boundAtText: String {
+        guard boundAt > 0 else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(boundAt)))
     }
 }
 

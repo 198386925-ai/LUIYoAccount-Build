@@ -74,6 +74,10 @@ $db->exec("CREATE TABLE IF NOT EXISTS licenses (
 )");
 try { $db->exec("ALTER TABLE licenses ADD COLUMN days INTEGER DEFAULT 30"); } catch (Exception $e) {}
 try { $db->exec("ALTER TABLE licenses ADD COLUMN created_at INTEGER DEFAULT 0"); } catch (Exception $e) {}
+try { $db->exec("ALTER TABLE licenses ADD COLUMN remark TEXT DEFAULT ''"); } catch (Exception $e) {}
+try { $db->exec("ALTER TABLE licenses ADD COLUMN bound_user_id INTEGER DEFAULT 0"); } catch (Exception $e) {}
+try { $db->exec("ALTER TABLE licenses ADD COLUMN bound_email TEXT DEFAULT ''"); } catch (Exception $e) {}
+try { $db->exec("ALTER TABLE licenses ADD COLUMN bound_at INTEGER DEFAULT 0"); } catch (Exception $e) {}
 // v2 新表：设备确认 / 登录日志
 $db->exec("CREATE TABLE IF NOT EXISTS device_confirms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -368,6 +372,8 @@ if ($action === 'bind_card') {
     $st = $db->prepare("SELECT id FROM users WHERE license_id=? AND id!=?");
     $st->execute([$lic['id'], $u['id']]);
     if ($st->fetch(PDO::FETCH_ASSOC)) resp(false, ['error' => '这张卡密已被其他账号绑定']);
+    // 记录这张卡被哪个账号绑定（卡密列表要清楚显示 账号 + UDID）
+    $db->prepare("UPDATE licenses SET bound_user_id=?, bound_email=?, bound_at=? WHERE id=?")->execute([$u['id'], $u['email'], $now, $lic['id']]);
     // SVIP 时长：按卡面天数（生成卡密时设定），没有天数的旧卡默认 30 天；days>=36500 视为永久
     $days = !empty($lic['days']) ? (int)$lic['days'] : 30;
     if ($days >= 36500) { $expires = 4102444800; $db->prepare("UPDATE users SET svip_expires_at=?, license_id=? WHERE id=?")->execute([$expires, $lic['id'], $u['id']]); resp(true, ['svip' => true, 'svip_expires_at' => $expires, 'days' => $days]); }
@@ -444,9 +450,14 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
     if ($action === 'admin_gen_cards') {
         $count = max(1, min(100, (int)($in['count'] ?? 1)));
         $days = max(1, min(36500, (int)($in['days'] ?? 30)));
+        $remark = trim((string)($in['remark'] ?? ''));
+        $remark = preg_replace('/\s+/u', '', $remark);
+        $remark = str_replace(['/', '\\', '"', "'"], '', $remark);
+        $remark = strtoupper($remark);
+        if (mb_strlen($remark) > 20) $remark = mb_substr($remark, 0, 20);
         $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         $codes = [];
-        $ins = $db->prepare("INSERT INTO licenses (code_plain, disabled, days, created_at) VALUES (?, 0, ?, ?)");
+        $ins = $db->prepare("INSERT INTO licenses (code_plain, disabled, days, created_at, remark) VALUES (?, 0, ?, ?, ?)");
         $guard = 0;
         while (count($codes) < $count && $guard < $count * 30) {
             $guard++;
@@ -456,18 +467,22 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
                 for ($i = 0; $i < 5; $i++) $seg .= $alphabet[random_int(0, strlen($alphabet) - 1)];
                 $parts[] = $seg;
             }
-            $code = 'LUI-' . implode('-', $parts);
-            try { $ins->execute([$code, $days, $now]); $codes[] = $code; } catch (Exception $e) { /* 撞码重试 */ }
+            $rand = implode('-', $parts);
+            $code = $remark !== '' ? ('LUI-' . $remark . '-' . $rand) : ('LUI-' . $rand);
+            try { $ins->execute([$code, $days, $now, $remark]); $codes[] = $code; } catch (Exception $e) { /* 撞码重试 */ }
         }
-        resp(true, ['codes' => $codes, 'count' => count($codes), 'days' => $days]);
+        resp(true, ['codes' => $codes, 'count' => count($codes), 'days' => $days, 'remark' => $remark]);
     }
     if ($action === 'admin_list_cards') {
-        $st = $db->query("SELECT l.id, l.code_plain, l.disabled, l.days, l.created_at, (SELECT email FROM users WHERE license_id=l.id LIMIT 1) AS bound_email FROM licenses l ORDER BY l.id DESC LIMIT 300");
+        $st = $db->query("SELECT l.id, l.code_plain, l.disabled, l.days, l.created_at, l.remark, l.bound_user_id, l.bound_email, l.bound_at, (SELECT email FROM users WHERE license_id=l.id LIMIT 1) AS fb_email, (SELECT udid FROM users WHERE id=l.bound_user_id) AS udid1, (SELECT udid FROM users WHERE license_id=l.id LIMIT 1) AS udid2 FROM licenses l WHERE l.code_plain <> '' ORDER BY l.id DESC LIMIT 300");
         $cards = [];
         while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $be = !empty($r['bound_email']) ? $r['bound_email'] : ($r['fb_email'] ?? '');
+            $bu = !empty($r['udid1']) ? $r['udid1'] : ($r['udid2'] ?? '');
             $cards[] = ['id' => (int)$r['id'], 'code' => $r['code_plain'], 'disabled' => (int)$r['disabled'],
                         'days' => (int)($r['days'] ?? 30), 'created_at' => (int)($r['created_at'] ?? 0),
-                        'bound_email' => $r['bound_email'] ?? ''];
+                        'remark' => $r['remark'] ?? '', 'bound_email' => $be,
+                        'bound_udid' => $bu, 'bound_at' => (int)($r['bound_at'] ?? 0)];
         }
         resp(true, ['cards' => $cards, 'total' => count($cards)]);
     }

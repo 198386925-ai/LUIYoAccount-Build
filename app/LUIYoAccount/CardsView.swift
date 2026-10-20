@@ -7,6 +7,7 @@ struct CardsView: View {
     @State private var cards: [CardItem] = []
     @State private var countText = "10"
     @State private var daysText = "30"
+    @State private var remarkText = ""
     @State private var newCodes: [String] = []
     @State private var generating = false
     @State private var error: String?
@@ -32,6 +33,13 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
                     }
+                    HStack {
+                        Text("备注")
+                        Spacer()
+                        TextField("客户名/用途，可空", text: $remarkText)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 180)
+                    }
                     Button {
                         Task { await generate() }
                     } label: {
@@ -41,7 +49,7 @@ struct CardsView: View {
                         }
                     }
                     .disabled(generating)
-                    Text("天数填 36500 = 永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
+                    Text("格式：LUI-备注-随机码（备注可空）。天数填 36500 = 永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
@@ -77,9 +85,30 @@ struct CardsView: View {
                                 Spacer()
                                 statusBadge(card)
                             }
+                            if !card.remark.isEmpty {
+                                Text("备注：" + card.remark)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
                             Text(detailLine(card))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                            if card.isBound {
+                                Text("绑定账号：" + card.boundEmail)
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                                if !card.boundUdid.isEmpty {
+                                    Text("UDID：" + card.boundUdid)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
+                                }
+                                if card.boundAt > 0 {
+                                    Text("绑定时间：" + card.boundAtText)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                             HStack(spacing: 16) {
                                 Button("复制") { UIPasteboard.general.string = card.code }
                                 Button(card.disabled ? "恢复" : "作废") {
@@ -123,9 +152,7 @@ struct CardsView: View {
     }
 
     private func detailLine(_ card: CardItem) -> String {
-        var s = "\(card.daysText) · 生成于 \(card.createdText)"
-        if card.isBound { s += " · \(card.boundEmail)" }
-        return s
+        "\(card.daysText) · 生成于 \(card.createdText)"
     }
 
     private func load() async {
@@ -142,7 +169,7 @@ struct CardsView: View {
         generating = true
         defer { generating = false }
         do {
-            let codes = try await api.genCards(count: count, days: days)
+            let codes = try await api.genCards(count: count, days: days, remark: remarkText.trimmingCharacters(in: .whitespaces))
             newCodes = codes
             notice = "已生成 \(codes.count) 张（每张 \(days >= 36500 ? "永久" : "\(days) 天")）"
             await load()
