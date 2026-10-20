@@ -36,6 +36,7 @@ struct AccountUser: Decodable, Identifiable {
         svip = Self.flexBool(c, .svip)
         svipExpiresAt = (try? c.decode(Int.self, forKey: .svipExpiresAt)) ?? 0
         ipFlagged = Self.flexBool(c, .ipFlagged)
+        udid = (try? c.decode(String.self, forKey: .udid)) ?? ""
         allowJailbreak = Self.flexBool(c, .allowJailbreak)
         createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
         lastLoginAt = (try? c.decode(Int.self, forKey: .lastLoginAt)) ?? 0
