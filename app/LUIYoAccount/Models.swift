@@ -81,3 +81,28 @@ struct SimpleResp: Decodable {
     let ok: Bool
     let error: String?
 }
+
+// MARK: - 应用更新（updates/latest.json + app-update.php）
+struct LatestRelease: Decodable {
+    let tagName: String
+    let body: String?
+    let assets: [Asset]
+
+    struct Asset: Decodable {
+        let name: String
+        let size: Int
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name", body, assets
+    }
+
+    var assetName: String { assets.first?.name ?? "" }
+    var assetSize: Int { assets.first?.size ?? 0 }
+}
+
+struct UploadResp: Decodable {
+    let ok: Bool
+    let error: String?
+    let name: String?
+}

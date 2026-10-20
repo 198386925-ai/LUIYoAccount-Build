@@ -19,6 +19,17 @@ small{color:#888}
 <div id="msg"></div>
 </div>
 <div class="card" id="list"><small>输密码后点加载</small></div>
+<div class="card">
+<h3 style="margin:4px 0 8px">应用更新（上传 IPA）</h3>
+<div id="curVer"><small>线上版本读取中…</small></div>
+<input id="ipaFile" type="file" accept=".ipa" onchange="ipaPicked()">
+<input id="upVer" placeholder="版本号（留空=自动识别，如 1.0.7）">
+<input id="upBuild" placeholder="构建号（留空=自动识别，纯数字）">
+<input id="upNotes" placeholder="更新说明（可空）">
+<button onclick="uploadIPA()">上传并发布</button>
+<div id="upMsg"></div>
+<small>更新源地址：<span id="feedUrl"></span>（App 检查更新读这个）</small>
+</div>
 <script>
 const API='user-auth-v2.php';
 async function post(action,data){
@@ -55,5 +66,42 @@ async function ban(email,b){
 }
 async function jb(email,a){const d=await post('admin_jailbreak',{email:email,allow:a}); alert(d.msg||d.error); load();}
 async function unflag(email){const d=await post('admin_unflag',{email:email}); alert(d.msg||d.error); load();}
+// ---- 应用更新 ----
+const UPD='app-update.php';
+document.getElementById('feedUrl').textContent=location.origin+'/updates/latest.json';
+async function loadCurrent(){
+  try{
+    const r=await fetch('updates/latest.json?t='+Date.now());
+    if(!r.ok)throw 0;
+    const j=await r.json();
+    const a=(j.assets&&j.assets[0])||{};
+    document.getElementById('curVer').innerHTML='<small>当前线上：<b>'+j.tag_name+'</b> · '+a.name+' · '+Math.round((a.size||0)/1024)+' KB</small>';
+  }catch(e){document.getElementById('curVer').innerHTML='<small>当前线上：尚未发布任何版本</small>';}
+}
+function ipaPicked(){
+  const f=document.getElementById('ipaFile').files[0]; if(!f)return;
+  let m=f.name.match(/^LUIYo-([0-9]+(?:\.[0-9]+){1,3})-b([1-9][0-9]*)\.ipa$/i);
+  if(!m)m=f.name.match(/-([0-9]+(?:\.[0-9]+){1,3}(?:-[0-9]+)?)-Build\(([0-9]+)\)\.ipa$/i);
+  if(m){document.getElementById('upVer').value=m[1].replace(/-[0-9]+$/,'');document.getElementById('upBuild').value=m[2];}
+}
+async function uploadIPA(){
+  const f=document.getElementById('ipaFile').files[0];
+  const msg=document.getElementById('upMsg');
+  if(!f){msg.textContent='先选择 IPA 文件';return;}
+  const fd=new FormData();
+  fd.append('password',document.getElementById('pw').value);
+  fd.append('ipa',f);
+  fd.append('version',document.getElementById('upVer').value);
+  fd.append('build',document.getElementById('upBuild').value);
+  fd.append('notes',document.getElementById('upNotes').value);
+  msg.textContent='上传中…（大文件多等一会）';
+  try{
+    const r=await fetch(UPD+'?action=upload_ipa',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){msg.innerHTML='✅ 已发布：'+d.name+'<br><small>sha256: '+d.sha256+'</small>';loadCurrent();}
+    else{msg.textContent='❌ '+(d.error||'上传失败');}
+  }catch(e){msg.textContent='❌ 网络错误：'+e;}
+}
+loadCurrent();
 </script>
 </body></html>

@@ -7,7 +7,12 @@ struct ContentView: View {
     var body: some View {
         Group {
             if api.loggedIn {
-                AccountsView()
+                TabView {
+                    AccountsView()
+                        .tabItem { Label("账号", systemImage: "person.2.fill") }
+                    UpdateView()
+                        .tabItem { Label("应用更新", systemImage: "arrow.up.circle.fill") }
+                }
             } else if !autoDone {
                 ProgressView("登录中…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
