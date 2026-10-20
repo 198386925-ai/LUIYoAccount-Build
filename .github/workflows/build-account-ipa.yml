@@ -1,0 +1,52 @@
+name: Build LUIYoAccount IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-account-ipa.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: luiyoaccount-ipa-main
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /Applications/Xcode_26.3.app/Contents/Developer
+          echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
+      - name: Verify checked-out source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Building repository source at $GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f app/LUIYoAccount.xcodeproj/project.pbxproj
+          test -f app/LUIYoAccount.xcodeproj/xcshareddata/xcschemes/LUIYoAccount.xcscheme
+          test -f app/scripts/build-ipa.sh
+          git status --short
+      - name: Build unsigned IPA from repository source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash app/scripts/build-ipa.sh
+          ls -lh app/output/
+          shasum -a 256 app/output/*.ipa app/output/*-src.zip
+      - name: Save IPA and source backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUIYoAccount-IPA-and-source
+          path: app/output/
