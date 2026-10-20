@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LUIYo 账号后台</title>
+<style>
+body{font-family:-apple-system;background:#f5f5f7;margin:0;padding:16px}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px}
+input{width:100%;padding:10px;margin:6px 0;border:1px solid #ddd;border-radius:10px;font-size:15px;box-sizing:border-box}
+button{padding:9px 14px;border:none;border-radius:10px;font-size:14px;margin:3px 2px;background:#007aff;color:#fff}
+button.red{background:#ff3b30}button.gray{background:#8e8e93}button.green{background:#34c759}
+.u{border-top:1px solid #eee;padding:10px 0}
+.u b{font-size:15px}.tag{font-size:12px;padding:2px 8px;border-radius:6px;color:#fff}
+.svip{background:#34c759}.free{background:#8e8e93}.ban{background:#ff3b30}.flag{background:#ff9500}
+small{color:#888}
+</style></head><body>
+<h2>LUIYo 账号后台</h2>
+<div class="card">
+<input id="pw" type="password" placeholder="后台密码">
+<button onclick="load()">加载账号列表</button>
+<div id="msg"></div>
+</div>
+<div class="card" id="list"><small>输密码后点加载</small></div>
+<script>
+const API='user-auth-v2.php';
+async function post(action,data){
+  data=data||{};data.password=document.getElementById('pw').value;
+  const r=await fetch(API+'?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  return await r.json();
+}
+async function load(){
+  const d=await post('admin_list');
+  if(!d.ok){document.getElementById('msg').textContent=d.error||'加载失败';return;}
+  document.getElementById('msg').textContent='共 '+d.total+' 个账号';
+  let h='';
+  d.users.forEach(u=>{
+    h+='<div class="u"><b>'+u.email+'</b> '
+      +(u.svip?'<span class="tag svip">SVIP</span>':'<span class="tag free">免费</span>')+' '
+      +(u.is_banned==1?'<span class="tag ban">已封禁</span>':'')+' '
+      +(u.ip_flagged==1?'<span class="tag flag">IP异常</span>':'')+'<br>'
+      +'<small>注册 '+new Date(u.created_at*1000).toLocaleString()+' · 最后登录 '+(u.last_login_at?new Date(u.last_login_at*1000).toLocaleString():'从未')
+      +' · 越狱允许:'+(u.allow_jailbreak==1?'是':'否')+'</small><br>'
+      +(u.is_banned==1
+        ?'<button class="green" onclick="ban(\''+u.email+'\',0)">解封</button>'
+        :'<button class="red" onclick="ban(\''+u.email+'\',1)">封禁</button>')
+      +(u.allow_jailbreak==1
+        ?'<button class="gray" onclick="jb(\''+u.email+'\',0)">禁止越狱</button>'
+        :'<button onclick="jb(\''+u.email+'\',1)">允许越狱</button>')
+      +(u.ip_flagged==1?'<button class="gray" onclick="unflag(\''+u.email+'\')">取消IP标红</button>':'')
+      +'</div>';
+  });
+  document.getElementById('list').innerHTML=h||'<small>暂无账号</small>';
+}
+async function ban(email,b){
+  let reason=''; if(b===1){reason=prompt('封禁理由（可空）')||'';}
+  const d=await post('admin_ban',{email:email,ban:b,reason:reason}); alert(d.msg||d.error); load();
+}
+async function jb(email,a){const d=await post('admin_jailbreak',{email:email,allow:a}); alert(d.msg||d.error); load();}
+async function unflag(email){const d=await post('admin_unflag',{email:email}); alert(d.msg||d.error); load();}
+</script>
+</body></html>

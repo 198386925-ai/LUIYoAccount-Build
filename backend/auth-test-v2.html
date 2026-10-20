@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LUIYo 账号系统 v2 测试</title>
+<style>
+body{font-family:-apple-system;background:#f5f5f7;margin:0;padding:20px}
+.card{background:#fff;border-radius:16px;padding:20px;margin-bottom:16px}
+input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:10px;font-size:16px;box-sizing:border-box}
+label{font-size:14px;color:#555}
+button{width:100%;padding:14px;background:#007aff;color:#fff;border:none;border-radius:12px;font-size:16px;margin-top:8px}
+pre{background:#f0f0f0;padding:12px;border-radius:8px;overflow:auto;font-size:13px;white-space:pre-wrap}
+h3{margin:0 0 8px}
+</style></head><body>
+<h2>LUIYo 账号系统 v2 测试</h2>
+<p style="color:#888;font-size:13px">接口：luioe.bbroot.com/user-auth-v2.php<br>先发验证码（真发邮件，去邮箱查收）→ 注册 → 登录 → 绑卡密</p>
+
+<div class="card">
+<h3>1. 发验证码</h3>
+<input id="email1" placeholder="邮箱" value="2017106439@qq.com">
+<button onclick="sendCode()">发送验证码（真发邮件）</button>
+<pre id="r1"></pre>
+</div>
+
+<div class="card">
+<h3>2. 注册</h3>
+<input id="email2" placeholder="邮箱" value="2017106439@qq.com">
+<input id="pwd2" placeholder="密码（至少6位）">
+<input id="code2" placeholder="邮箱收到的6位验证码">
+<button onclick="reg()">注册</button>
+<pre id="r2"></pre>
+</div>
+
+<div class="card">
+<h3>3. 登录</h3>
+<input id="email3" placeholder="邮箱" value="2017106439@qq.com">
+<input id="pwd3" placeholder="密码">
+<input id="dev3" placeholder="设备ID（改这个值模拟新设备）" value="device-001">
+<label><input type="checkbox" id="jb3" style="width:auto"> 模拟越狱设备（测安全5：默认会被拒）</label>
+<button onclick="login()">登录</button>
+<button onclick="checkConfirm()" style="background:#34c759">我已点邮箱确认链接</button>
+<pre id="r3"></pre>
+</div>
+
+<div class="card">
+<h3>4. 绑卡密</h3>
+<input id="token4" placeholder="登录返回的 token（=设备ID）">
+<input id="card4" placeholder="卡密 LUI-XXXXX-...">
+<button onclick="bindCard()">绑定</button>
+<pre id="r4"></pre>
+</div>
+
+<div class="card">
+<h3>5. 查状态（心跳）</h3>
+<input id="token5" placeholder="token（=设备ID）">
+<button onclick="status_()">查状态</button>
+<pre id="r5"></pre>
+</div>
+
+<script>
+const API='https://luioe.bbroot.com/user-auth-v2.php';
+async function post(action,data){
+  try{
+    const r=await fetch(API+'?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    return await r.json();
+  }catch(e){return {ok:false,error:'网络错误：'+e.message};}
+}
+function show(id,d){document.getElementById(id).textContent=JSON.stringify(d,null,2);}
+async function sendCode(){const d=await post('send_code',{email:document.getElementById('email1').value});show('r1',d);}
+async function reg(){const d=await post('register',{email:document.getElementById('email2').value,password:document.getElementById('pwd2').value,code:document.getElementById('code2').value});show('r2',d);}
+async function login(){
+  const d=await post('login',{email:document.getElementById('email3').value,password:document.getElementById('pwd3').value,device_id:document.getElementById('dev3').value,jailbroken:document.getElementById('jb3').checked?1:0});
+  show('r3',d);
+  if(d.token){document.getElementById('token4').value=d.token;document.getElementById('token5').value=d.token;}
+}
+async function checkConfirm(){
+  const d=await post('check_confirm',{email:document.getElementById('email3').value,device_id:document.getElementById('dev3').value});
+  show('r3',d);
+  if(d.token){document.getElementById('token4').value=d.token;document.getElementById('token5').value=d.token;}
+}
+async function bindCard(){const d=await post('bind_card',{token:document.getElementById('token4').value,card:document.getElementById('card4').value});show('r4',d);}
+async function status_(){const d=await post('status',{token:document.getElementById('token5').value});show('r5',d);}
+</script>
+</body></html>
