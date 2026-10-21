@@ -24,8 +24,9 @@ final class FontStore: ObservableObject {
     @Published private(set) var psName: String = ""
     /// 适配系数：自定义字体的字面通常比系统字体大，按 capHeight 比例把字号压回正常观感
     @Published private(set) var factor: CGFloat = 1
-    /// 字距补偿（pt，17pt 基准，≤0）：有的导入字体字面窄、字距天生宽，排出来字与字散开；
-    /// 量出它每个字比系统字体多占的宽度取负，套字体时用 tracking 收回来
+    /// 字距补偿：已按用户要求整体撤下、恒为 0——他要改的从来是文本的上下间距，
+    /// 不是字体的左右间距；左右一律按所选字体原本的设计渲染，不再做任何 tracking 修正。
+    /// 这个属性只为兼容旧代码保留，永远是 0
     @Published private(set) var trackingCompensation: CGFloat = 0
 
     /// 固定字号系数：全 App 字号锁死 = 基准字号 × factor × fixedScale，不再带相对字号
@@ -78,23 +79,10 @@ final class FontStore: ObservableObject {
         space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
 
-    /// 字距补偿（17pt 基准）= −（自定义字体比系统字体多出的每字墨迹间隙）。
-    /// 墨迹间隙 = 字格宽（advance）− 墨迹宽（笔画真正画到的范围）：有的字体字格和系统一样宽（≈1em），
-    /// 只是笔画画得窄、格内留白多——只比字格宽，差值 ≈ 0，补偿永远算不出来；必须比墨迹间隙，
-    /// 把多出的留白收掉。CJK 与数字各测一份取更负的一份（数字同样散）。
-    /// 任一样本量不到墨迹就退回旧的字格差算法。结果夹在 [−8, 0]。
+    /// 字距补偿已停用：恒为 0（用户明确要求左右间距完全恢复字体原样，只调上下间距）。
+    /// 下面的 inkGap / advanceDeltaPerChar 是旧墨迹测量代码，不再有人调用，留着备查。
     static func computeTrackingCompensation(psName: String) -> CGFloat {
-        guard !psName.isEmpty, let custom = UIFont(name: psName, size: 17) else { return 0 }
-        let sys = UIFont.systemFont(ofSize: 17)
-        var result: CGFloat = 0
-        for sample in ["永永永永永", "2026"] {
-            if let cg = inkGap(for: sample, font: custom), let sg = inkGap(for: sample, font: sys) {
-                result = min(result, -(cg - sg))
-            } else if let d = advanceDeltaPerChar(sample, custom: custom, sys: sys) {
-                result = min(result, -d)
-            }
-        }
-        return min(0, max(-8, result))
+        return 0
     }
 
     /// 一个字的墨迹间隙 = 字格总宽 − 墨迹总宽。
@@ -119,23 +107,15 @@ final class FontStore: ObservableObject {
         return (cw - sw) / n
     }
 
-    /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放；
-    /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）。
-    /// 纯墨迹补偿，不再叠加任何额外收紧（Build 13 给小字加的那份已按用户要求撤回——
-    /// 他说的「间距」其实是上下行距，不是左右字距）
+    /// 字距：恒为 0。左右间距完全按所选字体的原始设计渲染，App 不做任何
+    /// tracking 修正（墨迹补偿和 Build 13 的小字额外收紧都已撤下）
     func scaledTracking(for style: Font.TextStyle) -> CGFloat {
-        guard !psName.isEmpty else { return 0 }
-        let rendered = Self.baseSize(for: style) * factor * Self.fixedScale
-        let raw = trackingCompensation * rendered / 17
-        return max(raw, -0.45 * rendered)
+        return 0
     }
 
-    /// 指定字号版的字距补偿（同样夹 45% 安全线）
+    /// 指定字号版的字距：同样恒为 0
     func scaledTracking(forSize size: CGFloat) -> CGFloat {
-        guard !psName.isEmpty else { return 0 }
-        let rendered = size * factor * Self.fixedScale
-        let raw = trackingCompensation * rendered / 17
-        return max(raw, -0.45 * rendered)
+        return 0
     }
 
     /// 指定字号的字体出口（PillSegmented 的 12.5pt 标签等非语义字号用）：字号同样锁死
@@ -289,7 +269,7 @@ struct GlobalFontModifier: ViewModifier {
 }
 
 /// 全 App 统一的文字出口（Modifier 版，替代散落的 .appFont(...))：
-/// 字体走 FontStore，同时按字距补偿收紧自定义字体的散字距
+/// 字体走 FontStore；tracking 恒为 0（左右间距不做任何修正）
 struct AppFontModifier: ViewModifier {
     @EnvironmentObject var fontStore: FontStore
     let style: Font.TextStyle
