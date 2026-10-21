@@ -581,7 +581,7 @@ private struct NativeTabBarView: UIViewControllerRepresentable {
         if spec.id == "search" {
             return UISearchTab(viewControllerProvider: { _ in Self.placeholder() })
         }
-        return UITab(identifier: spec.id, title: spec.title, image: image(for: spec),
+        return UITab(title: spec.title ?? "", image: image(for: spec), identifier: spec.id,
                      viewControllerProvider: { _ in Self.placeholder() })
     }
 
