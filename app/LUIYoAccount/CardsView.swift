@@ -10,6 +10,8 @@ struct CardsView: View {
     @State private var cardFilter: CardFilter = .all
     @State private var remarkText = ""
     @State private var deleteTarget: CardItem?
+    @State private var confirmDeleteNewBatch = false
+    @State private var confirmDeleteAllUnused = false
     @State private var newCodes: [String] = []
     @State private var generating = false
     @State private var error: String?
@@ -75,6 +77,8 @@ struct CardsView: View {
                             UIPasteboard.general.string = newCodes.joined(separator: "\n")
                             notice = "已复制 \(newCodes.count) 张卡密"
                         }
+                        Button("删除这批") { confirmDeleteNewBatch = true }
+                            .foregroundColor(.red)
                         ForEach(newCodes, id: \.self) { code in
                             HStack {
                                 Text(code)
@@ -102,6 +106,19 @@ struct CardsView: View {
 
                 if cardFilter != .used {
                 Section("未使用（\(unusedCards.count)）") {
+                    if !unusedCards.isEmpty {
+                        HStack(spacing: 18) {
+                            Button("批量复制") { copyAllUnused() }
+                            Button("批量删除") { confirmDeleteAllUnused = true }
+                                .foregroundColor(.red)
+                            Spacer()
+                            Text("\(unusedCards.count) 张")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .font(.footnote)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    }
                     if unusedCards.isEmpty {
                         Text("暂无未使用的卡密")
                             .foregroundColor(.secondary)
@@ -135,6 +152,18 @@ struct CardsView: View {
             } message: {
                 Text(deleteTarget?.code ?? "")
             }
+            .confirmationDialog("删除这批卡密？", isPresented: $confirmDeleteNewBatch, titleVisibility: .visible) {
+                Button("全部删除", role: .destructive) { Task { await deleteNewBatch() } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("刚生成的 \(newCodes.count) 张卡密会被全部删除")
+            }
+            .confirmationDialog("删除全部未使用卡密？", isPresented: $confirmDeleteAllUnused, titleVisibility: .visible) {
+                Button("全部删除", role: .destructive) { Task { await deleteAllUnused() } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("\(unusedCards.count) 张未使用卡密会被全部删除，已使用的不受影响")
+            }
         }
     }
 
@@ -162,9 +191,15 @@ struct CardsView: View {
                     .font(.caption)
                     .fontWeight(.medium)
             }
-            copyLine("账号", card.boundEmail, color: .green)
+            Text("账号：" + card.boundEmail)
+                .font(.caption)
+                .foregroundColor(.green)
+                .lineLimit(1)
             if !card.boundUdid.isEmpty {
-                copyLine("UDID", card.boundUdid, mono: true)
+                Text("UDID：" + card.boundUdid)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             } else {
                 Text("UDID：未获取")
                     .font(.caption)
@@ -178,10 +213,28 @@ struct CardsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            actionRow(card)
         }
         .padding(.vertical, 1)
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .swipeActions(edge: .trailing) {
+            Button("删除", role: .destructive) { deleteTarget = card }
+            Button("复制卡密") {
+                UIPasteboard.general.string = card.code
+                notice = "已复制卡密"
+            }
+            if !card.boundEmail.isEmpty {
+                Button("复制账号") {
+                    UIPasteboard.general.string = card.boundEmail
+                    notice = "已复制账号"
+                }
+            }
+            if !card.boundUdid.isEmpty {
+                Button("复制UDID") {
+                    UIPasteboard.general.string = card.boundUdid
+                    notice = "已复制UDID"
+                }
+            }
+        }
     }
 
     private func unusedRow(_ card: CardItem) -> some View {
@@ -200,37 +253,49 @@ struct CardsView: View {
             Text(detailLine(card))
                 .font(.caption)
                 .foregroundColor(.secondary)
-            actionRow(card)
         }
         .padding(.vertical, 1)
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-    }
-
-    private func copyLine(_ label: String, _ value: String, mono: Bool = false, color: Color = .primary) -> some View {
-        HStack(spacing: 8) {
-            Text(label + "：" + value)
-                .font(mono ? .system(.caption2, design: .monospaced) : .caption)
-                .foregroundColor(color)
-                .lineLimit(1)
+        .swipeActions(edge: .trailing) {
+            Button("删除", role: .destructive) { deleteTarget = card }
+            Button(card.disabled ? "启用" : "作废") { Task { await toggle(card) } }
+                .tint(card.disabled ? .green : .orange)
             Button("复制") {
-                UIPasteboard.general.string = value
-                notice = "已复制" + label
+                UIPasteboard.general.string = card.code
+                notice = "已复制卡密"
             }
-            .font(.caption)
         }
     }
 
-    private func actionRow(_ card: CardItem) -> some View {
-        HStack(spacing: 16) {
-            Button("复制卡密") { UIPasteboard.general.string = card.code }
-            Button(card.disabled ? "恢复" : "作废") {
-                Task { await toggle(card) }
-            }
-            .foregroundColor(card.disabled ? .green : .orange)
-            Button("删除") { deleteTarget = card }
-                .foregroundColor(.red)
+    private func copyAllUnused() {
+        UIPasteboard.general.string = unusedCards.map(\.code).joined(separator: "\n")
+        notice = "已复制 \(unusedCards.count) 张未使用卡密"
+    }
+
+    private func deleteAllUnused() async {
+        do {
+            for c in unusedCards { try await api.cardDelete(id: c.id) }
+            notice = "已删除全部未使用卡密"
+            await load()
+        } catch {
+            if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
-        .font(.footnote)
+    }
+
+    private func deleteNewBatch() async {
+        let targets = cards.filter { newCodes.contains($0.code) }
+        do {
+            var remaining = newCodes
+            for t in targets {
+                try await api.cardDelete(id: t.id)
+                remaining.removeAll { $0 == t.code }
+            }
+            newCodes = remaining
+            notice = "已删除这批卡密"
+            await load()
+        } catch {
+            if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+        }
     }
 
     private func delete(_ card: CardItem) async {
