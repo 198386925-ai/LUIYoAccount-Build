@@ -24,11 +24,13 @@ enum BarGroup {
 ///   独立玻璃圆钮，胶囊里换成其余页（同样带标题）；点圆钮回 A 组并选中那个页。
 ///   整栏总宽恒定（左边距到搜索圆钮右缘永不动）：B 组胶囊只让出出处圆钮 + 一个
 ///   间隔的宽度，不大幅缩短。选中长相照原生底栏：选中槽的图标和标题一起变蓝
-///   （accent），未选中是次级灰；选中高亮是一块整槽宽的纯色半透明胶囊（白色
-///   50%，不带玻璃——Build 26 用户定版：玻璃透镜在真机上读成第二层玻璃，
-///   要纯色），铺在栏本体的上面一层框住图标+标题，同组内切换时随弹簧滑动；
+///   （accent），未选中是次级灰；选中高亮是一块整槽宽的纯色不透明浅灰胶囊
+///   （systemGray5，不带玻璃不带透明——Build 27 用户从三版对比图里选的
+///   2 号；Build 26 的白色 50% 被否），铺在栏本体的上面一层框住图标+标题，
+///   同组内切换时随弹簧滑动；
 ///   图标按钮在最上层。
-///   换组动画只动底栏几何（出处槽位原地淡出、左侧圆钮原地淡入、B 组槽位摊开），
+///   换组动画只动底栏几何（出处槽位原地淡出、左侧圆钮原地淡入、B 组槽位在
+///   静止帧上原地淡入——槽位帧换组全程不横移），
 ///   页面一律同帧硬切不淡入淡出。
 ///   页面全部活在一个 ZStack 里（首次访问后挂载并保活），搜索是盖在上面的伪页面。
 /// - iOS 16–25：Build 22 的原生 TabView 降级保留——同样是换组模式（条件 tab 集 +
@@ -58,9 +60,12 @@ struct ContentView: View {
     /// 只有这份状态在同一组内点选时用 withAnimation 更新，让高亮胶囊在底栏内部
     /// 自己滑动——动画上下文被关在底栏子树里，泄不到页面 ZStack 上。
     @State private var capsuleTab: AppTab? = .accounts
-    /// 换组动画进度：0 = A 组布局，1 = B 组布局。底栏几何（胶囊位置/宽度、各槽位
-    /// 中心/宽度、出处圆钮的淡入淡出）全部由它插值算出，换组时用弹簧推到另一端；
-    /// 逻辑状态（barGroup / currentPage）仍然同帧硬切，页面不参与这个动画
+    /// 换组动画进度：0 = A 组布局，1 = B 组布局。只有胶囊玻璃的位置/宽度和
+    /// 出处圆钮的淡入淡出随它插值；所有槽位项的帧按各自组别的静止几何算
+    /// （A 组项永远用 A 组帧、B 组项永远用 B 组帧），换组全程不横移——
+    /// Build 27 用户定版：不许再出现项目从右边混过来的滑动。换组时用弹簧
+    /// 推到另一端；逻辑状态（barGroup / currentPage）仍然同帧硬切，页面
+    /// 不参与这个动画
     @State private var swapProgress: CGFloat = 0
     /// 换组动画进行中：底栏项暂时不可点，防止动画中途误触把状态打乱
     @State private var barAnimating = false
@@ -81,8 +86,8 @@ struct ContentView: View {
         // 保证任何环境重算（输入框聚焦等）都不会让全 App 字号跳变
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
-        // 搜索胶囊离底边距离默认按玻璃外壳算（6 + 56 + 10）；旧 TabView 外壳自己改成 93
-        .environment(\.searchBarBottom, 72)
+        // 搜索胶囊离底边距离默认按玻璃外壳算（21 + 64 + 10）；旧 TabView 外壳自己改成 93
+        .environment(\.searchBarBottom, 95)
         .onAppear {
             FontStore.applyUIKitAppearances()
             // 自动登录：有保存的密码就直接进，不用每次输
@@ -153,11 +158,11 @@ struct ContentView: View {
         // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
         .transaction { $0.animation = nil }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 92)
+            Color.clear.frame(height: 115)
         }
         .overlay(alignment: .bottom) {
             glassBar
-                .padding(.bottom, 6)
+                .padding(.bottom, 21)
         }
         .onAppear { normalizeGlassOnAppear() }
         .onChange(of: currentPage) { mountedPages.insert($0) }
@@ -296,32 +301,41 @@ struct ContentView: View {
 
     // MARK: - 玻璃底栏（胶囊 + 出处圆钮 + 搜索圆钮，全系统玻璃）
 
-    /// 底栏分三层（从下到上），手工布局（槽位帧自己算）：栏高 56（图标 + 标题
-    /// 两行）；胶囊高、出处圆钮直径、搜索圆钮直径全是 56——两组同一个尺寸
+    /// 底栏分三层（从下到上），手工布局（槽位帧自己算）：栏高 64（图标 + 标题
+    /// 两行）；胶囊高、出处圆钮直径、搜索圆钮直径全是 64——两组同一个尺寸。
+    /// 尺寸位置照原生底栏（Build 27 定版：量用户 Build 24 真机录屏——胶囊与
+    /// 圆钮在帧里同高约 105px ≈ 64pt、左边距与圆钮右边距约 20pt；底边间隙
+    /// 21pt 是原生浮动栏的通行帧，总 footprint 64 + 21 = 85，和本 App 沿用的
+    /// 「原生底栏约 83」估计对得上）
     /// 1. 栏本体：一个 GlassEffectContainer 装胶囊条、出处圆底、搜索圆钮，全是裸
     ///    形状 + .glassEffect(.regular.interactive())，没有任何颜色填充或自绘背景
-    /// 2. 选中高亮：整槽宽的纯色半透明胶囊（白色 50%，不带玻璃）骑在栏本体
-    ///    表面，框住选中槽（图标 + 标题）。整层不吃点按
+    /// 2. 选中高亮：整槽宽的纯色不透明浅灰胶囊（systemGray5，不带玻璃）骑在栏
+    ///    本体表面，框住选中槽（图标 + 标题）。整层不吃点按
     /// 3. 槽位按钮：图标在上、标题在下（标题走 App 字体，约 11pt）；选中槽图标和
     ///    标题一起变蓝读 currentPage（跟页面瞬间到位），未选中是次级灰；圆钮只有图标
-    /// 几何：总宽恒定，左边距 16、搜索圆钮 56 钉在最右（中心 = 总宽 − 44），两组都
-    /// 不动；元素间隔 12。A 组胶囊从 16 到搜索左缘前 12；B 组胶囊让出出处圆钮
-    /// （56）+ 一个间隔（12），即起点右移 68、宽度少 68——只少这一截，不大幅缩短。
-    /// 槽宽随进度在「A 组等分」与「B 组等分」之间插值，各组项骑着胶囊走；A 组字形
-    /// 在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，槽位内容永不叠压。
+    /// 几何：总宽恒定，左边距 20、搜索圆钮 64 钉在最右（中心 = 总宽 − 52），两组
+    /// 都不动；元素间隔 12。A 组胶囊从 20 到搜索左缘前 12；B 组胶囊让出出处圆钮
+    /// （64）+ 一个间隔（12），即起点右移 76、宽度少 76——只少这一截，不大幅缩短。
+    /// 换组时随进度插值的只有胶囊玻璃的位置/宽度；两组槽位项各自永远用本组
+    /// 的静止帧（A 组项用 A 组等分、B 组项用 B 组等分），只淡入淡出、绝不
+    /// 横移；A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，永不叠压。
     /// 出处不飞：换组时出处槽位在胶囊里原地淡出，独立圆钮（圆底 + 图标 + 圆形
-    /// 高亮）在左侧终点位（44）原地淡入；回 A 组时反向原地交接
+    /// 高亮）在左侧终点位（52）原地淡入；回 A 组时反向原地交接
     @available(iOS 26.0, *)
     private var glassBar: some View {
         GeometryReader { geo in
             let gw = geo.size.width
             let p = swapProgress
-            let pillFull = gw - 100              // A 组胶囊宽：总宽 −（左 16 + 搜索 56 + 间隔 12 + 右 16）
-            let pillX = 16 + 68 * p              // B 组起点：让出处圆钮 56 + 间隔 12
-            let pillW = pillFull - 68 * p        // B 组胶囊只少出处圆钮 + 一个间隔
+            let pillFull = gw - 116              // A 组胶囊宽：总宽 −（左 20 + 搜索 64 + 间隔 12 + 右 20）
+            let pillX = 20 + 76 * p              // 胶囊玻璃的起点（只有玻璃随进度走）：B 组让出处圆钮 64 + 间隔 12
+            let pillW = pillFull - 76 * p        // B 组胶囊只少出处圆钮 + 一个间隔
+            let pillXB: CGFloat = 96             // B 组胶囊的静止起点 = 20 + 76，B 组项的帧按它算
             let na = CGFloat(tabOrder.barTabs.count + 1)
             let nb = CGFloat(max(tabOrder.moreTabs.count, 1))
-            let slotW = pillW * ((1 - p) / na + p / nb)
+            // 槽位静止帧（Build 27）：A 组项永远用 A 组等分、B 组项永远用 B 组等分，
+            // 换组时项的帧不动、只有透明度随进度走——不许再有横着混过去的滑动
+            let slotWA = pillFull / na
+            let slotWB = (pillFull - 76) / nb
             ZStack {
                 // 第一层：栏本体（胶囊条 + 出处圆底 + 搜索圆钮）
                 GlassEffectContainer(spacing: 10) {
@@ -329,64 +343,65 @@ struct ContentView: View {
                         Capsule()
                             .foregroundStyle(.clear)
                             .glassEffect(.regular.interactive(), in: Capsule())
-                            .frame(width: pillW, height: 56)
-                            .position(x: pillX + pillW / 2, y: 28)
+                            .frame(width: pillW, height: 64)
+                            .position(x: pillX + pillW / 2, y: 32)
                         if p > 0.001 {
                             Circle()
                                 .foregroundStyle(.clear)
                                 .glassEffect(.regular.interactive(), in: Circle())
-                                .frame(width: 56, height: 56)
-                                .position(x: 44, y: 28)
+                                .frame(width: 64, height: 64)
+                                .position(x: 52, y: 32)
                                 .opacity(p)
                         }
                         glassCircle(icon: "magnifyingglass", tinted: searchShown) {
                             if searchShown { closeSearch() } else { openSearch() }
                         }
-                        .position(x: gw - 44, y: 28)
+                        .position(x: gw - 52, y: 32)
                     }
-                    .frame(width: gw, height: 56)
+                    .frame(width: gw, height: 64)
                 }
-                // 第二层：选中高亮（纯色半透明，整层不吃点按）
-                selectionLens(pillX: pillX, slotW: slotW, p: p)
-                    .frame(width: gw, height: 56)
+                // 第二层：选中高亮（纯色不透明浅灰，整层不吃点按）
+                selectionLens(slotWA: slotWA, slotWB: slotWB, p: p)
+                    .frame(width: gw, height: 64)
                     .allowsHitTesting(false)
-                // 第三层：槽位按钮（图标 + 标题）
+                // 第三层：槽位按钮（图标 + 标题）：两组项各用本组静止帧，只淡入淡出
                 ZStack {
-                    aBarItems(pillX: pillX, slotW: slotW, p: p)
-                    bBarItems(pillX: pillX, slotW: slotW, p: p)
+                    aBarItems(pillX: 20, slotW: slotWA, p: p)
+                    bBarItems(pillX: pillXB, slotW: slotWB, p: p)
                     originBarItem(p: p)
                 }
-                .frame(width: gw, height: 56)
+                .frame(width: gw, height: 64)
             }
-            .frame(width: gw, height: 56)
+            .frame(width: gw, height: 64)
         }
-        .frame(height: 56)
+        .frame(height: 64)
     }
 
-    /// 选中高亮（第二层的内容）：整槽宽的纯色半透明胶囊（白色 50%，不带玻璃），
-    /// 框住选中槽（图标 + 标题）；停在哪一格读 capsuleTab（带弹簧的那份状态），
-    /// 同组内切换时随事务在槽位之间滑动。A 组项、B 组项的高亮帧和对应槽位帧
-    /// 一致，淡入淡出节奏跟着换组进度走；出处被选中时左侧圆钮里另有一块圆形
+    /// 选中高亮（第二层的内容）：整槽宽的纯色不透明浅灰胶囊（systemGray5，
+    /// 不带玻璃不带透明），框住选中槽（图标 + 标题）；停在哪一格读 capsuleTab
+    /// （带弹簧的那份状态），同组内切换时随事务在槽位之间滑动。高亮帧读对应
+    /// 组别的静止槽位帧（A 组读 A 组等分、B 组读 B 组等分），和槽位项同帧，
+    /// 换组时只随进度淡入淡出、不横移；出处被选中时左侧圆钮里另有一块圆形
     /// 高亮随进度 p 原地淡入淡出，和它的槽位高亮原地交接——两块都不飞。
     /// capsuleTab 为 nil（搜索打开时）整层为空、没有高亮
     @available(iOS 26.0, *)
-    private func selectionLens(pillX: CGFloat, slotW: CGFloat, p: CGFloat) -> some View {
+    private func selectionLens(slotWA: CGFloat, slotWB: CGFloat, p: CGFloat) -> some View {
         ZStack {
             if let sel = capsuleTab {
                 if let idx = tabOrder.barTabs.firstIndex(of: sel) {
-                    flatLensCapsule(centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
-                                    width: slotW - 8,
+                    flatLensCapsule(centerX: 20 + (CGFloat(idx) + 0.5) * slotWA,
+                                    width: slotWA - 8,
                                     opacity: swapFadeOut(p))
                 } else if let idx = tabOrder.moreTabs.firstIndex(of: sel) {
-                    flatLensCapsule(centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
-                                    width: max(slotW - 8, 0),
+                    flatLensCapsule(centerX: 96 + (CGFloat(idx) + 0.5) * slotWB,
+                                    width: max(slotWB - 8, 0),
                                     opacity: swapFadeIn(p))
                 }
                 if sel == originTab {
                     Circle()
-                        .fill(Color.white.opacity(0.5))
-                        .frame(width: 52, height: 52)
-                        .position(x: 44, y: 28)
+                        .fill(Color(UIColor.systemGray5))
+                        .frame(width: 60, height: 60)
+                        .position(x: 52, y: 32)
                         .opacity(p)
                 }
             }
@@ -396,9 +411,9 @@ struct ContentView: View {
     @available(iOS 26.0, *)
     private func flatLensCapsule(centerX: CGFloat, width: CGFloat, opacity: CGFloat) -> some View {
         Capsule()
-            .fill(Color.white.opacity(0.5))
-            .frame(width: width, height: 44)
-            .position(x: centerX, y: 28)
+            .fill(Color(UIColor.systemGray5))
+            .frame(width: width, height: 52)
+            .position(x: centerX, y: 32)
             .opacity(opacity)
     }
 
@@ -460,12 +475,12 @@ struct ContentView: View {
                     .lineLimit(1)
             }
             .foregroundStyle(tinted ? Color.accentColor : Color.secondary)
-            .frame(width: frameWidth, height: 56)
+            .frame(width: frameWidth, height: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(opacity)
-        .position(x: centerX, y: 28)
+        .position(x: centerX, y: 32)
         .allowsHitTesting(hittable)
         .accessibilityHidden(!hittable)
     }
@@ -491,7 +506,7 @@ struct ContentView: View {
         }
     }
 
-    /// B 组项：其余页，槽宽随进度从 A 组的等分摊开到填满 B 组胶囊
+    /// B 组项：其余页，永远用 B 组胶囊的等分静止帧，只随进度淡入（不横移）
     @available(iOS 26.0, *)
     private func bBarItems(pillX: CGFloat, slotW: CGFloat, p: CGFloat) -> some View {
         let op = swapFadeIn(p)
@@ -507,7 +522,7 @@ struct ContentView: View {
         }
     }
 
-    /// 出处圆钮按钮（最上层）：只有图标的内容，钉在左侧终点位（44）不动——
+    /// 出处圆钮按钮（最上层）：只有图标的内容，钉在左侧终点位（52）不动——
     /// 圆底在栏本体层、圆形高亮在高亮层，都和这里一样只随进度 p 淡入淡出。
     /// 换组不飞（Build 26）：出处页在胶囊里的槽位由 aBarItems 当普通 A 组项
     /// 原地淡出，这个圆钮原地淡入；回 A 组时反向原地交接。
@@ -521,12 +536,12 @@ struct ContentView: View {
         } label: {
             barGlyphView(barGlyph(for: originTab))
                 .foregroundStyle(tint)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .opacity(p)
-        .position(x: 44, y: 28)
+        .position(x: 52, y: 32)
         .allowsHitTesting(hittable)
         .accessibilityHidden(!hittable)
     }
@@ -538,7 +553,7 @@ struct ContentView: View {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(tinted ? Color.accentColor : Color.primary)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .glassEffect(.regular.interactive(), in: Circle())
                 .contentShape(Circle())
         }
