@@ -180,6 +180,14 @@ class AccountAPI: ObservableObject {
         return list
     }
 
+    /// 按 build 删版本记录（Build 37 批量删除用；需新版 app-update.php 的
+    /// version_delete——只删注册表记录和弹窗状态，IPA 文件保留）
+    func versionDelete(build: String) async throws -> [VersionEntry] {
+        let r: VersionsResp = try await postUpdate(action: "version_delete", params: ["build": build])
+        guard r.ok, let list = r.versions else { throw APIError.server(r.error ?? "删除失败") }
+        return list
+    }
+
     // MARK: - 底层（JSON POST，密码放 body，与 PHP admin_authed 对应）
 
     private func post<T: Decodable>(action: String, params: [String: String], password: String? = nil) async throws -> T {

@@ -125,7 +125,9 @@ struct AccountsView: View {
             // 底栏搜索圆钮打开的全局搜索——它能搜账号/卡密/邮件并点结果直达本页
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("退出") { api.logout() }
+                    // Build 37：右上「退出」按用户要求删掉，换成「刷新」
+                    //（退出登录在设置页里，本来就有，不受影响）
+                    Button("刷新") { Task { await reload() } }
                 }
             }
             .task { await reload() }

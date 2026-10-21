@@ -12,12 +12,21 @@ import SwiftUI
 /// 侧滑按钮（弹更新 / 禁用 / 恢复正常，按当前状态只显示适用的——和
 /// Build 32 以前版本行的侧滑同一套）。
 /// 行高按 Build 33 的压缩口径：输入行上下内边距 4（Build 32 是 7）。
+/// Build 37：右上「刷新」左边加「编辑」——进入批量删除模式：卡片左侧出
+/// 勾选圈、点卡只勾选（不展开不侧滑），底部操作条显示已选个数 + 删除，
+/// 确认后按 build 逐个调后端 version_delete（只删记录，不删 IPA 文件）。
 struct VersionsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
     @State private var versions: [VersionEntry] = []
     @State private var loaded = false
     @State private var errorText: String?
+    /// 批量删除（Build 37）：编辑模式 + 已选 build 集（版本以 build 为键，
+    /// 与 version_set / 后端注册表同一口径）+ 删除确认 + 删除中
+    @State private var editing = false
+    @State private var selectedBuilds: Set<String> = []
+    @State private var confirmDelete = false
+    @State private var deleting = false
 
     var body: some View {
         NavigationView {
@@ -29,22 +38,86 @@ struct VersionsView: View {
                     }
                 }
                 ForEach(versions) { v in
-                    VersionEditCard(entry: v) { newList in
-                        versions = newList
-                    }
+                    VersionEditCard(entry: v,
+                                    editing: editing,
+                                    selected: selectedBuilds.contains(v.build),
+                                    onSaved: { newList in versions = newList },
+                                    onToggleSelect: {
+                                        if selectedBuilds.contains(v.build) {
+                                            selectedBuilds.remove(v.build)
+                                        } else {
+                                            selectedBuilds.insert(v.build)
+                                        }
+                                    })
                 }
             }
             .compactSectionSpacing()
             .navigationTitle("版本管理")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(editing ? "完成" : "编辑") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            editing.toggle()
+                            if !editing { selectedBuilds.removeAll() }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("刷新") { Task { await load() } }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if editing {
+                    HStack(spacing: 12) {
+                        Text("已选 \(selectedBuilds.count) 个")
+                            .appFont(.body)
+                        Spacer()
+                        Button(role: .destructive) {
+                            confirmDelete = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("删除")
+                                    .appFont(.body, weight: .semibold)
+                                if deleting { ProgressView() }
+                            }
+                        }
+                        .disabled(selectedBuilds.isEmpty || deleting)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                }
+            }
             .task { await load() }
+            .alert("删除选中的 \(selectedBuilds.count) 个版本？", isPresented: $confirmDelete) {
+                Button("删除", role: .destructive) { Task { await deleteSelected() } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后版本列表里不再有它们，弹窗状态同步清掉；已上传的 IPA 文件保留。")
+            }
             .alert("版本管理", isPresented: .constant(errorText != nil)) {
                 Button("好") { errorText = nil }
             } message: { Text(errorText ?? "") }
+        }
+    }
+
+    /// 批量删除：按 build 逐个调后端 version_delete（每个回传最新列表，
+    /// 用最后一个为准），删完退出编辑模式
+    private func deleteSelected() async {
+        deleting = true
+        defer { deleting = false }
+        do {
+            var latest = versions
+            for b in selectedBuilds.sorted() {
+                latest = try await api.versionDelete(build: b)
+            }
+            versions = latest
+            selectedBuilds.removeAll()
+            editing = false
+        } catch {
+            if !error.isCancelError {
+                errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 
@@ -68,7 +141,11 @@ struct VersionsView: View {
 private struct VersionEditCard: View {
     @EnvironmentObject var api: AccountAPI
     let entry: VersionEntry
+    /// 批量删除编辑模式（Build 37）：editing 时点卡只勾选；selected 是勾选态
+    let editing: Bool
+    let selected: Bool
     let onSaved: ([VersionEntry]) -> Void
+    let onToggleSelect: () -> Void
     @State private var title: String
     @State private var l2: String
     @State private var l3: String
@@ -78,9 +155,14 @@ private struct VersionEditCard: View {
     /// 收起/展开（Build 35）：默认收起，只显示标题行
     @State private var expanded = false
 
-    init(entry: VersionEntry, onSaved: @escaping ([VersionEntry]) -> Void) {
+    init(entry: VersionEntry, editing: Bool, selected: Bool,
+         onSaved: @escaping ([VersionEntry]) -> Void,
+         onToggleSelect: @escaping () -> Void) {
         self.entry = entry
+        self.editing = editing
+        self.selected = selected
         self.onSaved = onSaved
+        self.onToggleSelect = onToggleSelect
         _title = State(initialValue: entry.title)
         _l2 = State(initialValue: entry.l2)
         _l3 = State(initialValue: entry.l3)
@@ -115,6 +197,11 @@ private struct VersionEditCard: View {
                 // 恢复正常，按当前状态只显示适用的；点了直接 version_set
                 // 只带状态，文案不动）
                 HStack(alignment: .center, spacing: 10) {
+                    if editing {
+                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            .appFont(.title3)
+                            .foregroundColor(selected ? .accentColor : .secondary)
+                    }
                     Text("\(entry.version) · Build \(entry.build)")
                         .appFont(.headline)
                     Spacer(minLength: 6)
@@ -122,24 +209,30 @@ private struct VersionEditCard: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    if editing {
+                        onToggleSelect()
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    }
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .swipeActions(edge: .trailing) {
-                    if entry.state != "soft" {
-                        Button("弹更新") { Task { await setState("soft") } }
-                            .tint(.orange)
-                    }
-                    if entry.state != "banned" {
-                        Button("禁用") { Task { await setState("banned") } }
-                            .tint(.red)
-                    }
-                    if entry.state != "normal" {
-                        Button("恢复正常") { Task { await setState("normal") } }
-                            .tint(.gray)
+                    if !editing {
+                        if entry.state != "soft" {
+                            Button("弹更新") { Task { await setState("soft") } }
+                                .tint(.orange)
+                        }
+                        if entry.state != "banned" {
+                            Button("禁用") { Task { await setState("banned") } }
+                                .tint(.red)
+                        }
+                        if entry.state != "normal" {
+                            Button("恢复正常") { Task { await setState("normal") } }
+                                .tint(.gray)
+                        }
                     }
                 }
-                if expanded {
+                if expanded && !editing {
                     fieldRow("提示", placeholder: "弹窗标题", text: $title)
                     fieldRow("标题", placeholder: "第二行文案", text: $l2)
                     fieldRow("原因", placeholder: "第三行文案", text: $l3)
@@ -177,7 +270,7 @@ private struct VersionEditCard: View {
             }
             // 发布信息独立卡（Build 35）：展开后才在保存下面出现，自己一张卡，
             // 只放发布于 / 本次更新两行只读小字（值空的那行不显示，两行都空整卡不出）
-            if expanded && hasInfo {
+            if expanded && !editing && hasInfo {
                 Section {
                     VStack(alignment: .leading, spacing: 3) {
                         if let publishedLine {

@@ -309,13 +309,29 @@ if ($action === 'upload_ipa') {
 }
 
 // ---- 版本管理（需管理员密码，JSON body，与账号 App 的 postUpdate 对应） ----
-if ($action === 'versions_list' || $action === 'version_set') {
+if ($action === 'versions_list' || $action === 'version_set' || $action === 'version_delete') {
     $raw = json_decode(file_get_contents('php://input'), true);
     $in = is_array($raw) ? $raw : $_POST;
     if (!admin_authed($in['password'] ?? '')) out(['ok' => false, 'error' => '密码验证失败'], 401);
     $versions = load_versions();
     if ($action === 'versions_list') {
         out(['ok' => true, 'versions' => $versions]);
+    }
+    // version_delete：按 build 删注册表记录（同 build 的重复记录一并删），同步
+    // latest.json 的 version_states；只删记录，绝不删 updates/ 里已上传的 IPA 文件
+    if ($action === 'version_delete') {
+        $build = trim((string)($in['build'] ?? ''));
+        if ($build === '') out(['ok' => false, 'error' => '缺少 build 参数']);
+        $kept = [];
+        foreach ($versions as $v) {
+            if ((string)($v['build'] ?? '') !== $build) $kept[] = $v;
+        }
+        if (count($kept) === count($versions)) {
+            out(['ok' => false, 'error' => '找不到构建号 ' . $build . ' 的版本记录']);
+        }
+        save_versions($kept);
+        sync_version_states($kept);
+        out(['ok' => true, 'versions' => $kept]);
     }
     // version_set：按 build 定位，只改传了的字段（状态 / 标题 / 第二行 / 第三行）
     $build = trim((string)($in['build'] ?? ''));

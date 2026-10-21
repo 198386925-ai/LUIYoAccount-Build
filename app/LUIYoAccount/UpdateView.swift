@@ -34,7 +34,6 @@ struct UpdateView: View {
                     Text(latestLoaded ? "尚未发布任何版本" : "读取中…")
                         .foregroundColor(.secondary)
                 }
-                Button("刷新") { Task { await loadLatest() } }
             } header: {
                 AppSectionHeader("线上版本（主 App 更新源）")
             }
@@ -86,6 +85,13 @@ struct UpdateView: View {
         }
         .compactSectionSpacing()
         .navigationTitle("应用更新")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                // Build 37：刷新改到右上角胶囊按钮（和版本管理页同款），
+                // 卡内的蓝色文字按钮已删
+                Button("刷新") { Task { await loadLatest() } }
+            }
+        }
         .sheet(isPresented: $showPicker) {
             IPADocumentPicker { url in
                 if let url = url { adopt(url) }
