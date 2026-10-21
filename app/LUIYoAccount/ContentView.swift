@@ -14,68 +14,18 @@ enum BarGroup {
     case a, b
 }
 
-/// 选中胶囊的一帧几何（中心 x / 宽 / 高），换组行程在停靠帧之间插值用
-struct LensGeom {
-    var cx: CGFloat
-    var w: CGFloat
-    var h: CGFloat
-    static func lerp(_ a: LensGeom, _ b: LensGeom, _ t: CGFloat) -> LensGeom {
-        LensGeom(cx: a.cx + (b.cx - a.cx) * t,
-                 w: a.w + (b.w - a.w) * t,
-                 h: a.h + (b.h - a.h) * t)
-    }
-}
-
-/// 同组内点选时滑行的选中胶囊（纯色 systemGray5）：中心 / 宽 / 高都是
-/// 可动画值，跟着 capsuleTab 的弹簧事务连续插值；滑行中途按离落位中心
-/// 的距离把宽度微微拉长（原生选中胶囊滑行时的果冻感），落位自动收回。
-/// 换组时不用它——换组走 swapProgress 插值的行程帧（travelLensFrame）
-private struct GlideLens: View, Animatable {
-    var centerX: CGFloat
-    var width: CGFloat
-    var height: CGFloat
-    /// 落位中心（不参与插值）：离它越远拉得越长，到位归零
-    var targetCenterX: CGFloat
-
-    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
-        get { AnimatablePair(centerX, AnimatablePair(width, height)) }
-        set {
-            centerX = newValue.first
-            width = newValue.second.first
-            height = newValue.second.second
-        }
-    }
-
-    var body: some View {
-        let stretch = min(26, abs(centerX - targetCenterX) * 0.45)
-        Capsule()
-            .fill(Color(UIColor.systemGray5))
-            .frame(width: max(width + stretch, 0), height: height)
-            .position(x: centerX, y: 32)
-    }
-}
-
 /// 外壳（iOS 26 与 16–25 两套）：
-/// - iOS 26：液态玻璃换组底栏（照用户参考的 Rex 底栏的切换方式）——栏里所有表面
-///   只用系统 Liquid Glass 组件（GlassEffectContainer + glassEffect），不给任何
-///   表面填颜色、不贴自绘背景；只有「排布」是自定义的。胶囊里的每个槽位 =
-///   图标在上、标题在下（原生 tab 项的长相）；出处圆钮和搜索圆钮仍只有图标。
-///   A 组胶囊里是排序前 3 页 + 第 4 个「…」（标题「更多」），右边是独立玻璃圆钮
-///   （搜索）；点「…」换到 B 组：刚才所在的页从胶囊里滑出来，变成胶囊左边一个
-///   独立玻璃圆钮，胶囊里换成其余页（同样带标题）；点圆钮回 A 组并选中那个页。
-///   整栏总宽恒定（左边距到搜索圆钮右缘永不动）：B 组胶囊只让出出处圆钮 + 一个
-///   间隔的宽度，不大幅缩短。选中长相照原生底栏：选中槽的图标和标题一起变蓝
-///   （accent），未选中是次级灰；选中高亮是一块整槽宽的纯色不透明浅灰胶囊
-///   （systemGray5，不带玻璃不带透明——Build 27 用户从三版对比图里选的
-///   2 号；Build 26 的白色 50% 被否），铺在栏本体的上面一层框住图标+标题，
-///   同组内切换时随弹簧滑动；
-///   图标按钮在最上层。
-///   换组动画（Build 28 照原生底栏的切换手感，全栏一根弹簧）：槽位项各自
-///   钉在本组静止帧上只淡入淡出（不横移）；出处字形沿底栏轴线直线滑进
-///   左侧圆钮；选中胶囊实地滑行——同组内滑到新槽（中途微微拉长），
-///   换组时先滑出到圆钮帧、再滑回胶囊条落到新选中槽。
-///   页面一律同帧硬切不淡入淡出。
-///   页面全部活在一个 ZStack 里（首次访问后挂载并保活），搜索是盖在上面的伪页面。
+/// - iOS 26：原生底栏换组外壳——底栏本体是一个只供底栏的真 UITabBarController
+///   （NativeTabBarView，子 VC 全是透明占位，页面不住在里面），玻璃、选中透镜、
+///   果冻滑动、着色排版全部由系统渲染，本外壳不碰它的任何 appearance，选中也
+///   只有系统那一份：没有任何自加的高亮层 / 透镜 / 染色（Build 23 的白透镜被
+///   用户否掉——「搞得底栏两层液态玻璃」）。换组靠切换条的条目集：A 组 = 排序
+///   前 3 页 +「更多」（点它在代理层被拦下、只翻组，永远不会被选中），搜索是
+///   真的 UISearchTab（右侧独立圆钮）；B 组条目 = 其余页，此时整条底栏向右
+///   右移 76pt，出处页变成左腾空处一个独立的系统玻璃圆钮（图标按钮，不是
+///   选中元素，不带任何高亮），点它回 A 组。两组 footprint 恒定（圆钮区 + 条
+///   永远占满边距到边距、同高）。页面住在 SwiftUI 的 ZStack 里整屏托管
+///   （访问过才挂载、保活、硬切显隐），搜索是盖在上面的伪页面。
 /// - iOS 16–25：Build 22 的原生 TabView 降级保留——同样是换组模式（条件 tab 集 +
 ///   拦截式选择绑定，前 3 页 +「更多」/ 出处打头 + 其余页 +「收起」），图标 + 文字，
 ///   含用户自定义模板图（账号 / 生成卡密 / 更多）。
@@ -89,36 +39,23 @@ struct ContentView: View {
     @State private var selection: ShellTab = .page(.accounts)
     @State private var legacyGroup: BarGroup = .a
     @State private var legacyOrigin: AppTab = .accounts
-    // 玻璃外壳（iOS 26）状态
+    // 原生底栏外壳（iOS 26）状态
     @State private var currentPage: AppTab = .accounts
     @State private var barGroup: BarGroup = .a
     @State private var originTab: AppTab = .accounts
+    /// 出处圆钮的透明度：圆钮常驻挂载、位置恒定，只淡入淡出（从不平移）
+    @State private var originOpacity: Double = 0
     @State private var searchShown = false
     @State private var savedPage: AppTab = .accounts
     @State private var savedGroup: BarGroup = .a
     @State private var savedOrigin: AppTab = .accounts
     @State private var mountedPages: Set<AppTab> = [.accounts]
-    /// 底栏选中高亮胶囊当前停在哪个槽位：和 currentPage 分开的一份状态。
-    /// 切页/换组时 currentPage 一律走禁用动画的事务（瞬间到位、不串页），
-    /// 只有这份状态在同一组内点选时用 withAnimation 更新，让高亮胶囊在底栏内部
-    /// 自己滑动——动画上下文被关在底栏子树里，泄不到页面 ZStack 上。
-    @State private var capsuleTab: AppTab? = .accounts
-    /// 换组动画进度：0 = A 组布局，1 = B 组布局。胶囊玻璃的位置/宽度、出处
-    /// 圆钮的淡入淡出、出处字形的滑行、选中胶囊的换组行程全部由它插值；
-    /// 其余槽位项的帧按各自组别的静止几何算（A 组项永远用 A 组帧、B 组项
-    /// 永远用 B 组帧），只随进度淡入淡出、绝不横移（Build 27 定版）。
-    /// 换组时用底栏唯一的那根弹簧推到另一端；逻辑状态（barGroup /
-    /// currentPage）仍然同帧硬切，页面不参与这个动画
-    @State private var swapProgress: CGFloat = 0
-    /// 换组动画进行中：底栏项暂时不可点，防止动画中途误触把状态打乱
-    @State private var barAnimating = false
-    /// 选中胶囊的换组行程（Build 28）：(aTab, bTab) = 这次换组两端的选中页
-    /// （进 B 组：aTab = 出处页、bTab = 第一个 B 组页；回 A 组：aTab = 出处
-    /// 页、bTab = 离开的 B 组页）。行程路径两个方向共用一条：A 组槽（p=0）
-    /// → 出处圆钮帧（p≈0.5）→ B 组槽（p=1）——进组正着走、回组倒着走，
-    /// 两头和落位帧严丝合缝。只在换组动画期间非 nil，落位后清掉，
-    /// 常态高亮（GlideLens）接管
-    @State private var lensTravel: (aTab: AppTab, bTab: AppTab)?
+    /// 底栏量测（由真 UITabBarController 布局后回填，不猜常量）：
+    /// 条总高（栏顶到窗口底边）、选中胶囊中心距条底的距离、条跨过的底部
+    /// 安全区高度。初值按 iPhone 的常见尺寸给，首帧布局后即被真实量测覆盖
+    @State private var barStripHeight: CGFloat = 100
+    @State private var barCenterFromBottom: CGFloat = 57
+    @State private var barSafeBottom: CGFloat = 34
 
     var body: some View {
         Group {
@@ -136,8 +73,8 @@ struct ContentView: View {
         // 保证任何环境重算（输入框聚焦等）都不会让全 App 字号跳变
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
-        // 搜索胶囊离底边距离默认按玻璃外壳算（21 + 64 + 10）；旧 TabView 外壳自己改成 93
-        .environment(\.searchBarBottom, 95)
+        // 搜索胶囊离底边距离的默认值；原生底栏外壳按量测动态覆盖，旧 TabView 外壳自己改成 93
+        .environment(\.searchBarBottom, 80)
         .onAppear {
             FontStore.applyUIKitAppearances()
             // 自动登录：有保存的密码就直接进，不用每次输
@@ -159,15 +96,15 @@ struct ContentView: View {
     private var mainShell: some View {
         Group {
             if #available(iOS 26.0, *) {
-                glassShell
+                nativeBarShell
             } else {
                 legacyShell
             }
         }
         .onChange(of: tabOrder.order) { _ in
-            // 玻璃外壳：排序变了重置回 A 组；旧外壳：出处/分组跟着新顺序归一（页面不跳）
+            // 原生底栏外壳：排序变了重置回 A 组；旧外壳：出处/分组跟着新顺序归一（页面不跳）
             if #available(iOS 26.0, *) {
-                resetGlassForOrderChange()
+                resetNativeForOrderChange()
             } else {
                 normalizeLegacyForOrderChange()
             }
@@ -185,14 +122,17 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - iOS 26 液态玻璃换组外壳
+    // MARK: - iOS 26 原生底栏换组外壳（真 UITabBarController 只供底栏 + 页面 ZStack）
 
     /// 五个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（opacity 切显隐），
     /// 各自的导航栈、滚动位置、已加载数据都不丢；搜索以伪页面盖在最上层。
-    /// 底部 safeAreaInset 留出底栏高度，页面内容永远不被浮动底栏挡住；
-    /// 整层沉到物理底边（见 body 上的 ignoresSafeArea），留白是绝对值。
+    /// 底栏本体是 NativeTabBarView 包着的真 UITabBarController（见文件末尾）：
+    /// 玻璃、选中透镜、果冻滑动、着色全部是系统的，我们一行 appearance 都不碰；
+    /// 选中也只有系统那一份——本外壳没有任何自加的高亮层 / 染色（Build 23 的
+    /// 白透镜被用户否掉：「搞得底栏两层液态玻璃」）。页面底部留白读底栏量测
+    /// （barPageInset），内容永远不被底栏挡住
     @available(iOS 26.0, *)
-    private var glassShell: some View {
+    private var nativeBarShell: some View {
         ZStack {
             ForEach(AppTab.allCases) { tab in
                 if mountedPages.contains(tab) {
@@ -206,44 +146,28 @@ struct ContentView: View {
                 GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
             }
         }
-        // 整层沉到屏幕物理底边（Build 28）：不沉的话，底栏的 21pt 下边距是
-        // 垫在安全区底线之上量的（21 + 安全区 34 = 真机量到浮高 55pt）；沉
-        // 下去之后，底栏下边距 21、页面底部留白 115、搜索胶囊下边距 95 全
-        // 部是从物理底边量的绝对值（栏占 [21, 85]，页面留白 = 栏顶 85 +
-        // 上方间隔 30），三个数都不用改、第一次在屏幕上量是准的
-        .ignoresSafeArea(edges: .bottom)
         // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
         .transaction { $0.animation = nil }
+        // 搜索胶囊浮在底栏上方 10pt：底边距离 = 页面底部留白 + 10，随底栏量测走
+        .environment(\.searchBarBottom, barPageInset + 10)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 115)
+            Color.clear.frame(height: barPageInset)
         }
         .overlay(alignment: .bottom) {
-            glassBar
-                .padding(.bottom, 21)
+            nativeBar
         }
-        .onAppear { normalizeGlassOnAppear() }
+        .onAppear { normalizeNativeOnAppear() }
         .onChange(of: currentPage) { mountedPages.insert($0) }
     }
 
-    /// 底栏唯一的一根弹簧（Build 28 定版，照原生底栏的切换手感调的
-    /// 0.35 / 0.8）：同组内选中胶囊的滑行（capsuleTab）和换组时
-    /// swapProgress 的推进全用它——同一条栏上不许再有第二根弹簧，
-    /// 两根弹簧各走各的就是之前切换糊成一团的原因之一
-    private var barSpring: Animation { .spring(response: 0.35, dampingFraction: 0.8) }
-
-    /// 推 swapProgress 到目标端：动画只动底栏几何，页面和逻辑状态在此之前已经硬切到位；
-    /// 收尾时清掉选中胶囊的换组行程——行程终点帧和落位帧是同一个帧，接管无跳变
-    private func animateSwap(to target: CGFloat) {
-        barAnimating = true
-        withAnimation(barSpring) { swapProgress = target }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            barAnimating = false
-            lensTravel = nil
-        }
-    }
+    /// 页面底部留白：底栏条总高（栏顶到窗口底边）减去条自己跨过的底部安全区
+    /// （条钉在窗口底边、home indicator 间距是系统底栏自己留的），页面只需
+    /// 让出伸进安全区的那截
+    private var barPageInset: CGFloat { max(0, barStripHeight - barSafeBottom) }
 
     /// 禁用动画的事务：切页、换组、开关搜索的逻辑状态变更全部走它——
-    /// 新页同帧全显、旧页同帧全消，两组永不同时在场
+    /// 新页同帧全显、旧页同帧全消，两组永不同时在场（底栏条的横移是它自己的
+    /// 布局动画，发生在条那一层，进不了页面 ZStack）
     private var instant: Transaction {
         var t = Transaction()
         t.disablesAnimations = true
@@ -251,20 +175,17 @@ struct ContentView: View {
     }
 
     /// 首次进入时把状态对齐当前排序：A 组里选中的必须是底栏前 3 页之一
-    private func normalizeGlassOnAppear() {
-        lensTravel = nil
+    private func normalizeNativeOnAppear() {
         if barGroup == .a && !tabOrder.barTabs.contains(currentPage) {
             currentPage = tabOrder.barTabs.first ?? .accounts
         }
         originTab = currentPage
-        capsuleTab = currentPage
-        swapProgress = barGroup == .b ? 1 : 0
+        originOpacity = barGroup == .b ? 1 : 0
         mountedPages.insert(currentPage)
     }
 
-    /// 排序变化（外观页拖动）：玻璃外壳一律重置回 A 组，保证状态和新顺序一致（硬切）
-    private func resetGlassForOrderChange() {
-        lensTravel = nil
+    /// 排序变化（外观页拖动）：一律重置回 A 组，保证状态和新顺序一致（硬切）
+    private func resetNativeForOrderChange() {
         withTransaction(instant) {
             searchShown = false
             barGroup = .a
@@ -272,86 +193,70 @@ struct ContentView: View {
                 currentPage = tabOrder.barTabs.first ?? tabOrder.order.first ?? .accounts
             }
             originTab = currentPage
-            capsuleTab = currentPage
-            swapProgress = 0
+            originOpacity = 0
         }
         mountedPages.insert(currentPage)
     }
 
-    /// 点胶囊里同组的另一页：页面本身瞬间到位（禁用动画事务），
-    /// 只有高亮胶囊的状态带动画更新——高亮胶囊在底栏内部从旧槽位滑到新槽位，
-    /// 这份动画只影响读 capsuleTab 的槽位视图，进不了页面 ZStack
+    /// 点底栏里的真实页（经 TBC 代理 didSelect 回报）：页面瞬间到位；
+    /// A 组里出处恒等于当前页（点「更多」时独立出去的就是它），随选随同步
     private func selectPage(_ tab: AppTab) {
         mountedPages.insert(tab)
         withTransaction(instant) {
             currentPage = tab
-            // A 组里出处恒等于当前页（点「…」时弹出去的就是它），随选随同步
             if barGroup == .a { originTab = tab }
         }
-        withAnimation(barSpring) { capsuleTab = tab }
     }
 
-    /// 点「…」进 B 组：当前页记为出处，选中其余页的第一个——页面和逻辑状态同帧硬切，
-    /// 底栏几何随后裂开：出处槽位在胶囊里原地淡出、独立圆钮在左侧终点位原地淡入
-    /// （不横穿整条栏飞过去），B 组项摊开填满剩下的胶囊宽度
+    /// 点「更多」进 B 组：当前页记为出处（它将以独立圆钮出现在左边），
+    /// 选中其余页的第一个——逻辑状态同帧硬切；条目集合同帧换成 B 组、
+    /// leading 同帧无动画到位，圆钮随后在最终位置淡入
     private func enterGroupB() {
         guard let first = tabOrder.moreTabs.first else { return }
         mountedPages.insert(first)
-        // 选中胶囊的行程：从当前页（出处）的 A 组槽出发，中途停圆钮帧，
-        // 落到第一个 B 组槽——和下面的硬切同帧登记，动画随后由 animateSwap 推
-        lensTravel = (aTab: currentPage, bTab: first)
         withTransaction(instant) {
             originTab = currentPage
             barGroup = .b
             currentPage = first
-            capsuleTab = first
         }
-        animateSwap(to: 1)
+        // 圆钮在最终位置淡入：只有透明度在动，位置恒定、从不平移
+        withAnimation(.easeInOut(duration: 0.2)) { originOpacity = 1 }
     }
 
-    /// 点出处圆钮：回 A 组并选中出处页——页面硬切，底栏几何反向合拢：
-    /// 圆钮原地淡出、出处槽位在胶囊里原地淡入，A 组项摊回原样
+    /// 点出处圆钮：回 A 组并选中出处页——页面硬切，底栏条横移回全宽
     private func backToOrigin() {
-        // 行程反着走同一条路：从当前 B 组槽出发，中途停圆钮帧，落回出处槽
-        lensTravel = (aTab: originTab, bTab: currentPage)
+        // 圆钮原地淡出，与分组的硬切同帧发生
+        withAnimation(.easeInOut(duration: 0.15)) { originOpacity = 0 }
         withTransaction(instant) {
             barGroup = .a
             currentPage = originTab
-            capsuleTab = originTab
         }
-        animateSwap(to: 0)
     }
 
     private func openSearch() {
         savedPage = currentPage
         savedGroup = barGroup
         savedOrigin = originTab
-        lensTravel = nil
         withTransaction(instant) {
             searchShown = true
-            capsuleTab = nil
         }
     }
 
-    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组（硬切，底栏布局也直接对齐那一组）
+    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组（硬切）
     private func closeSearch() {
-        lensTravel = nil
         withTransaction(instant) {
             searchShown = false
             currentPage = savedPage
             barGroup = savedGroup
             originTab = savedOrigin
-            capsuleTab = savedPage
-            swapProgress = savedGroup == .b ? 1 : 0
+            originOpacity = savedGroup == .b ? 1 : 0
         }
     }
 
     /// 搜索点中结果：底栏页 → 回 A 组选中它；其余页 → 进 B 组选中它，
-    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）。
-    /// 跨组跳转，高亮直接到位、不滑动（硬切）
+    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）
     private func pickFromSearch(_ tab: AppTab) {
         let returnOrigin = savedGroup == .a ? savedPage : savedOrigin
-        lensTravel = nil
         mountedPages.insert(tab)
         withTransaction(instant) {
             searchShown = false
@@ -364,176 +269,93 @@ struct ContentView: View {
                 originTab = returnOrigin
                 currentPage = tab
             }
-            capsuleTab = tab
-            // 搜索是盖在上面的伪页面，跳转直接落位：底栏布局硬切到目标组，不走裂开动画
-            swapProgress = barGroup == .b ? 1 : 0
+            originOpacity = barGroup == .b ? 1 : 0
         }
     }
 
-    // MARK: - 玻璃底栏（胶囊 + 出处圆钮 + 搜索圆钮，全系统玻璃）
+    // MARK: - 底栏条（真系统底栏 + B 组时左侧独立出处圆钮）
 
-    /// 底栏分三层（从下到上），手工布局（槽位帧自己算）：栏高 64（图标 + 标题
-    /// 两行）；胶囊高、出处圆钮直径、搜索圆钮直径全是 64——两组同一个尺寸。
-    /// 尺寸位置照原生底栏（Build 27 定版：量用户 Build 24 真机录屏——胶囊与
-    /// 圆钮在帧里同高约 105px ≈ 64pt、左边距与圆钮右边距约 20pt；底边间隙
-    /// 21pt 是原生浮动栏的通行帧，总 footprint 64 + 21 = 85，和本 App 沿用的
-    /// 「原生底栏约 83」估计对得上）
-    /// 1. 栏本体：一个 GlassEffectContainer 装胶囊条、出处圆底、搜索圆钮，全是裸
-    ///    形状 + .glassEffect(.regular.interactive())，没有任何颜色填充或自绘背景
-    /// 2. 选中高亮：整槽宽的纯色不透明浅灰胶囊（systemGray5，不带玻璃）骑在栏
-    ///    本体表面，框住选中槽（图标 + 标题）。整层不吃点按
-    /// 3. 槽位按钮：图标在上、标题在下（标题走 App 字体，约 11pt）；选中槽图标和
-    ///    标题一起变蓝读 currentPage（跟页面瞬间到位），未选中是次级灰；圆钮只有图标
-    /// 几何：总宽恒定，左边距 20、搜索圆钮 64 钉在最右（中心 = 总宽 − 52），两组
-    /// 都不动；元素间隔 12。A 组胶囊从 20 到搜索左缘前 12；B 组胶囊让出出处圆钮
-    /// （64）+ 一个间隔（12），即起点右移 76、宽度少 76——只少这一截，不大幅缩短。
-    /// 尺寸审计（Build 28）：全栏只有一个尺寸数 64——胶囊高、出处圆钮直径、
-    /// 搜索圆钮直径、槽位项高全是它（代码常量和用户截图上量到的渲染高度
-    /// 都是 64、上下边对齐）；选中胶囊高 52、圆钮高亮 60 是在 64 里留的
-    /// 边距（上下各 6 / 各 2），不是第二个尺寸。栏的纵向位置是绝对值：
-    /// 外壳整层沉到物理底边，胶囊底边离物理底边 21（栏占 [21, 85]）。
-    /// 换组时随进度插值的是胶囊玻璃的位置/宽度、出处字形的滑行和选中胶囊
-    /// 的行程；其余槽位项各自永远用本组的静止帧，只淡入淡出、绝不横移；
-    /// A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，永不叠压。
-    /// 出处字形沿轴线滑行：出处页在胶囊里的槽位原地淡出（和其余 A 组项
-    /// 一样），字形本体沿底栏轴线（y 恒定、x 单调）直线滑到左侧圆钮位
-    /// （52），和槽位项的淡出互补交接；圆底在终点位随进度原地淡入；
-    /// 回 A 组时字形反向滑回槽位
+    /// 当前分组的底栏条目：A = 前 3 页 +「更多」；B = 其余页（出处不在条里，
+    /// 它是左边那个独立圆钮）；两组末尾都是搜索（真的 UISearchTab）
+    private var nativeBarItems: [NativeBarItemSpec] {
+        let search = NativeBarItemSpec(id: "search", title: nil, tab: nil)
+        switch barGroup {
+        case .a:
+            return tabOrder.barTabs.map { NativeBarItemSpec(id: "page.\($0.rawValue)", title: $0.title, tab: $0) }
+                + [NativeBarItemSpec(id: "more", title: "更多", tab: nil), search]
+        case .b:
+            return tabOrder.moreTabs.map { NativeBarItemSpec(id: "page.\($0.rawValue)", title: $0.title, tab: $0) }
+                + [search]
+        }
+    }
+
+    /// 底部条本体：高度 = 量测到的底栏条总高，钉在窗口底边（忽略底部安全区，
+    /// 让系统底栏按它自己的方式留 home indicator 间距）。
+    /// A 组：条全宽。B 组：条的 leading 右移 76，
+    /// 系统底栏在变窄的条里自己重排——玻璃和选中永远是系统的；腾出的左侧
+    /// 空间放出处圆钮（系统玻璃圆按钮，只是按钮、不是选中元素：不带任何
+    /// 高亮层，出处页的字形用主色，和系统未选中项一个读法）。
+    /// 两组 footprint 恒定：圆钮区（76）+ 条 = 永远占满边距到边距、同高。
+    /// leading 的变化不带任何动画：逻辑状态走 instant 事务（disablesAnimations）
+    /// 硬切、条框同帧到位——画面上唯一的动效是系统底栏内部的条目变形，
+    /// 以及出处圆钮的淡入淡出（Build 24 的条框弹簧会和系统的变形打架，已删）
     @available(iOS 26.0, *)
-    private var glassBar: some View {
-        GeometryReader { geo in
-            let gw = geo.size.width
-            let p = swapProgress
-            let pillFull = gw - 116              // A 组胶囊宽：总宽 −（左 20 + 搜索 64 + 间隔 12 + 右 20）
-            let pillX = 20 + 76 * p              // 胶囊玻璃的起点（只有玻璃随进度走）：B 组让出处圆钮 64 + 间隔 12
-            let pillW = pillFull - 76 * p        // B 组胶囊只少出处圆钮 + 一个间隔
-            let pillXB: CGFloat = 96             // B 组胶囊的静止起点 = 20 + 76，B 组项的帧按它算
-            let na = CGFloat(tabOrder.barTabs.count + 1)
-            let nb = CGFloat(max(tabOrder.moreTabs.count, 1))
-            // 槽位静止帧（Build 27）：A 组项永远用 A 组等分、B 组项永远用 B 组等分，
-            // 换组时项的帧不动、只有透明度随进度走——不许再有横着混过去的滑动
-            let slotWA = pillFull / na
-            let slotWB = (pillFull - 76) / nb
-            ZStack {
-                // 第一层：栏本体（胶囊条 + 出处圆底 + 搜索圆钮）
-                GlassEffectContainer(spacing: 10) {
-                    ZStack {
-                        Capsule()
-                            .foregroundStyle(.clear)
-                            .glassEffect(.regular.interactive(), in: Capsule())
-                            .frame(width: pillW, height: 64)
-                            .position(x: pillX + pillW / 2, y: 32)
-                        if p > 0.001 {
-                            Circle()
-                                .foregroundStyle(.clear)
-                                .glassEffect(.regular.interactive(), in: Circle())
-                                .frame(width: 64, height: 64)
-                                .position(x: 52, y: 32)
-                                .opacity(p)
-                        }
-                        glassCircle(icon: "magnifyingglass", tinted: searchShown) {
-                            if searchShown { closeSearch() } else { openSearch() }
-                        }
-                        .position(x: gw - 52, y: 32)
-                    }
-                    .frame(width: gw, height: 64)
+    private var nativeBar: some View {
+        ZStack(alignment: .topLeading) {
+            NativeTabBarView(
+                items: nativeBarItems,
+                selectedID: "page.\(currentPage.rawValue)",
+                interactionEnabled: !searchShown,
+                onSelectPage: { selectPage($0) },
+                onMore: { enterGroupB() },
+                onSearch: { openSearch() },
+                onMetrics: { h, c, s in
+                    if abs(barStripHeight - h) > 0.5 { barStripHeight = h }
+                    if abs(barCenterFromBottom - c) > 0.5 { barCenterFromBottom = c }
+                    if abs(barSafeBottom - s) > 0.5 { barSafeBottom = s }
                 }
-                // 第二层：选中高亮（纯色不透明浅灰，整层不吃点按）
-                selectionLens(slotWA: slotWA, slotWB: slotWB, p: p)
-                    .frame(width: gw, height: 64)
-                    .allowsHitTesting(false)
-                // 第三层：槽位按钮（图标 + 标题）：两组项各用本组静止帧，只淡入
-                // 淡出；只有出处字形（originBarItem）沿轴线滑行
-                ZStack {
-                    aBarItems(pillX: 20, slotW: slotWA, p: p)
-                    bBarItems(pillX: pillXB, slotW: slotWB, p: p)
-                    originBarItem(p: p, slotWA: slotWA)
-                }
-                .frame(width: gw, height: 64)
-            }
-            .frame(width: gw, height: 64)
+            )
+            .padding(.leading, barGroup == .b ? 76 : 0)
+            // 圆钮常驻挂载在最终位置：进出 B 组只有透明度变，位置从不动
+            originCircle
+                .position(x: 44, y: barStripHeight - barCenterFromBottom)
+                .opacity(originOpacity)
+                .accessibilityHidden(originOpacity < 0.5)
         }
-        .frame(height: 64)
+        .frame(maxWidth: .infinity)
+        .frame(height: barStripHeight)
+        .ignoresSafeArea(edges: .bottom)
     }
 
-    /// 选中高亮（第二层的内容）：纯色不透明浅灰胶囊（systemGray5，不带玻璃
-    /// 不带透明），框住选中槽（图标 + 标题）；停在哪一格读 capsuleTab。
-    /// Build 28 的动效照原生底栏，和栏本体同一根弹簧（barSpring）：
-    /// - 同组内点选：胶囊实地滑过去（GlideLens：中心/宽/高连续插值，中途按
-    ///   离落位中心的距离微微拉长，落位收回——原生选中胶囊的果冻感）；
-    /// - 换组：胶囊走行程（lensTravel）沿底栏轴线实地滑：A 组槽 → 出处圆钮
-    ///   帧（进度 45%–55% 停在圆钮帧，胶囊收成圆钮的高亮）→ B 组槽；回组
-    ///   时同一条路径倒着走。行程帧由 swapProgress 插值算出，不再原地
-    ///   淡入淡出；
-    /// - 出处被选中时圆钮里另有一块圆形高亮（和行程的圆钮帧同位同尺寸）。
-    /// capsuleTab 为 nil（搜索打开时）整层为空、没有高亮
+    /// 出处圆钮（B 组时出现在底栏左侧腾出的空间里）：56pt 系统玻璃圆按钮，
+    /// 常驻挂载、位置恒定，只以透明度淡入淡出（从不平移、从不自屏幕外滑入），
+    /// 字形 = 出处页自己的图标（和它在条里时同一个来源），纵向和系统底栏
+    /// 的中心对齐（读量测 barCenterFromBottom）。点它回 A 组并选中出处页。
+    /// 它不是选中元素：没有任何高亮 / 透镜 / 染色，选中态的表达只有系统
+    /// 底栏那一份（在条里），圆钮字形保持主色
     @available(iOS 26.0, *)
-    private func selectionLens(slotWA: CGFloat, slotWB: CGFloat, p: CGFloat) -> some View {
-        ZStack {
-            if let sel = capsuleTab {
-                if let travel = lensTravel {
-                    let f = travelLensFrame(travel, p: p, slotWA: slotWA, slotWB: slotWB)
-                    Capsule()
-                        .fill(Color(UIColor.systemGray5))
-                        .frame(width: f.w, height: f.h)
-                        .position(x: f.cx, y: 32)
-                } else {
-                    let f = lensFrame(for: sel, slotWA: slotWA, slotWB: slotWB)
-                    GlideLens(centerX: f.cx, width: f.w, height: f.h, targetCenterX: f.cx)
-                    if sel == originTab {
-                        Circle()
-                            .fill(Color(UIColor.systemGray5))
-                            .frame(width: 60, height: 60)
-                            .position(x: 52, y: 32)
-                            .opacity(p)
-                    }
-                }
-            }
+    private var originCircle: some View {
+        Button {
+            backToOrigin()
+        } label: {
+            barGlyphView(barGlyph(for: originTab))
+                .foregroundStyle(Color.primary)
+                .frame(width: 56, height: 56)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .allowsHitTesting(barGroup == .b && !searchShown)
     }
 
-    /// 选中胶囊的落位帧：A 组槽读 A 组等分、B 组槽读 B 组等分（整槽宽 −8、
-    /// 高 52，和槽位项同帧）；哪组都查不到时退到出处圆钮帧
-    private func lensFrame(for sel: AppTab, slotWA: CGFloat, slotWB: CGFloat) -> LensGeom {
-        if let idx = tabOrder.barTabs.firstIndex(of: sel) {
-            return LensGeom(cx: 20 + (CGFloat(idx) + 0.5) * slotWA, w: slotWA - 8, h: 52)
-        }
-        if let idx = tabOrder.moreTabs.firstIndex(of: sel) {
-            return LensGeom(cx: 96 + (CGFloat(idx) + 0.5) * slotWB, w: max(slotWB - 8, 0), h: 52)
-        }
-        return LensGeom(cx: 52, w: 60, h: 60)
-    }
-
-    /// 换组时选中胶囊的行程帧：A 组槽 → 出处圆钮帧 → B 组槽，全部由
-    /// swapProgress 插值（进组 p 从 0 到 1、回组从 1 到 0，同一条路径
-    /// 反着走）；两头和落位帧是同一个帧，行程开始/结束都不跳
-    private func travelLensFrame(_ travel: (aTab: AppTab, bTab: AppTab),
-                                 p: CGFloat, slotWA: CGFloat, slotWB: CGFloat) -> LensGeom {
-        let a = lensFrame(for: travel.aTab, slotWA: slotWA, slotWB: slotWB)
-        let b = lensFrame(for: travel.bTab, slotWA: slotWA, slotWB: slotWB)
-        let c = LensGeom(cx: 52, w: 60, h: 60)   // 出处圆钮的高亮帧
-        if p < 0.45 { return LensGeom.lerp(a, c, p / 0.45) }
-        if p > 0.55 { return LensGeom.lerp(c, b, (p - 0.55) / 0.45) }
-        return c
-    }
-
-    /// 换组时 A 组字形的淡出：进度前 35% 内消失
-    private func swapFadeOut(_ p: CGFloat) -> CGFloat { min(1, max(0, 1 - p / 0.35)) }
-    /// B 组字形的淡入：稍晚起步、进度 40% 时全显，和淡出错开，字形永不同时抢眼
-    private func swapFadeIn(_ p: CGFloat) -> CGFloat { min(1, max(0, (p - 0.08) / 0.32)) }
-
-    /// 底栏字形来源：SF 符号或用户自定义模板图（Assets）。全部槽位同一个光学
-    /// 尺寸：SF 符号 21pt semibold；模板图放进 24×24 框（图本身 25pt 画布、
-    /// 墨迹约占 88%，落框后墨迹 ≈21pt）——Build 20 的 SF「ellipsis」三个点在
-    /// 同字号下明显比别的字形小、看着不对称，换成用户的圆圈省略号模板图后
-    /// 和其他槽位齐平
+    /// 底栏字形来源：SF 符号或用户自定义模板图（Assets）。出处圆钮用：
+    /// 账号 / 生成卡密是用户的模板图，其余页用线框 SF 符号（和模板图的
+    /// 线条风格一致）：邮件 envelope、更新 arrow.up.circle、设置 gearshape
     private enum BarGlyph {
         case system(String)
         case asset(String)
     }
 
-    /// 页面在玻璃栏里的字形：账号 / 生成卡密用用户的模板图，其余页用线框 SF
-    /// 符号（和模板图的线条风格一致）：邮件 envelope、更新 arrow.up.circle、设置 gearshape
     private func barGlyph(for tab: AppTab) -> BarGlyph {
         if let asset = tab.customIconAsset { return .asset(asset) }
         switch tab {
@@ -559,114 +381,6 @@ struct ContentView: View {
         }
     }
 
-    /// 胶囊里的一个槽位项（最上层，手工定位）：图标在上、标题在下——玻璃表面在
-    /// 栏本体层、选中高亮在高亮层，都不在按钮里。内容尺寸固定不变形，动的是中心
-    /// 和槽宽；选中长相照原生底栏：图标和标题一起变蓝，读 capsuleTab（和选中
-    /// 胶囊同一份状态——点选时颜色随那根弹簧跟胶囊一起过渡，略领先胶囊落位；
-    /// 页面本身仍是瞬间到位），未选中图标和标题都是次级灰
-    @available(iOS 26.0, *)
-    private func barItem(glyph: BarGlyph, title: String, tinted: Bool,
-                         frameWidth: CGFloat, centerX: CGFloat, opacity: CGFloat,
-                         hittable: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                barGlyphView(glyph)
-                Text(title)
-                    .appFont(size: 12)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(tinted ? Color.accentColor : Color.secondary)
-            .frame(width: frameWidth, height: 64)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(opacity)
-        .position(x: centerX, y: 32)
-        .allowsHitTesting(hittable)
-        .accessibilityHidden(!hittable)
-    }
-
-    /// A 组项：底栏前 3 页（出处页在 A 组里就是普通槽位项，和其它页一样
-    /// 原地淡入淡出）+ 末尾的「…」
-    @available(iOS 26.0, *)
-    private func aBarItems(pillX: CGFloat, slotW: CGFloat, p: CGFloat) -> some View {
-        let op = swapFadeOut(p)
-        let hittable = barGroup == .a && !searchShown && !barAnimating
-        return ZStack {
-            ForEach(Array(tabOrder.barTabs.enumerated()), id: \.element) { idx, tab in
-                barItem(glyph: barGlyph(for: tab), title: tab.title,
-                        tinted: capsuleTab == tab,
-                        frameWidth: slotW,
-                        centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
-                        opacity: op, hittable: hittable) { selectPage(tab) }
-            }
-            barItem(glyph: .asset("TabIconMore"), title: "更多", tinted: false,
-                    frameWidth: slotW,
-                    centerX: pillX + (CGFloat(tabOrder.barTabs.count) + 0.5) * slotW,
-                    opacity: op, hittable: hittable) { enterGroupB() }
-        }
-    }
-
-    /// B 组项：其余页，永远用 B 组胶囊的等分静止帧，只随进度淡入（不横移）
-    @available(iOS 26.0, *)
-    private func bBarItems(pillX: CGFloat, slotW: CGFloat, p: CGFloat) -> some View {
-        let op = swapFadeIn(p)
-        let hittable = barGroup == .b && !searchShown && !barAnimating
-        return ZStack {
-            ForEach(Array(tabOrder.moreTabs.enumerated()), id: \.element) { idx, tab in
-                barItem(glyph: barGlyph(for: tab), title: tab.title,
-                        tinted: capsuleTab == tab,
-                        frameWidth: slotW,
-                        centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
-                        opacity: op, hittable: hittable) { selectPage(tab) }
-            }
-        }
-    }
-
-    /// 出处圆钮按钮（最上层）：只有图标的内容。圆底在栏本体层、圆形高亮在
-    /// 高亮层，都钉在左侧终点位（52）只随进度 p 原地淡入淡出；字形本体是
-    /// 全栏唯一平移的项（Build 28）：换组时沿底栏轴线直线滑行（y 恒 32、
-    /// x 从它在 A 组里的槽位中心单调滑到圆钮中心 52），透明度和它的槽位
-    /// 项的淡出互补——同在进度前 35% 内交接（槽位项淡出多少、字形淡入
-    /// 多少）；回 A 组时反向滑回槽位。轨迹是一条直线，不绕弧、不穿过
-    /// 别的槽位项（字形在最上层、从胶囊表面上滑过去）。
-    /// 点它：回 A 组并选中出处页（只在 B 组可点，滑行中不可点）
-    @available(iOS 26.0, *)
-    private func originBarItem(p: CGFloat, slotWA: CGFloat) -> some View {
-        let hittable = barGroup == .b && !searchShown && !barAnimating
-        let tint: Color = !searchShown && currentPage == originTab ? Color.accentColor : Color.primary
-        // 滑行轨迹：x 从出处在 A 组里的槽位中心 → 圆钮中心（52），只动 x
-        let originIdx = tabOrder.barTabs.firstIndex(of: originTab) ?? 0
-        let slotCX = 20 + (CGFloat(originIdx) + 0.5) * slotWA
-        let cx = slotCX + (52 - slotCX) * p
-        return Button {
-            backToOrigin()
-        } label: {
-            barGlyphView(barGlyph(for: originTab))
-                .foregroundStyle(tint)
-                .frame(width: 64, height: 64)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .opacity(min(1, p / 0.35))
-        .position(x: cx, y: 32)
-        .allowsHitTesting(hittable)
-        .accessibilityHidden(!hittable)
-    }
-
-    /// 独立玻璃圆钮：搜索（永远钉在最右，位置不动），系统玻璃——住在栏本体层里
-    @available(iOS 26.0, *)
-    private func glassCircle(icon: String, tinted: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(tinted ? Color.accentColor : Color.primary)
-                .frame(width: 64, height: 64)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - iOS 16–25 旧外壳（Build 22 的原生 TabView + 换组降级，图标 + 文字）
 
@@ -793,6 +507,160 @@ struct ContentView: View {
             } else {
                 legacyGroup = .b
             }
+        }
+    }
+}
+
+// MARK: - 原生底栏包装（真 UITabBarController 只供底栏）
+
+/// 底栏条目描述：id 定身份（page.<rawValue> / more / search），title 进原生
+/// tab 项（系统标签），tab 非 nil = 真实页面（点选切页），nil = 伪条目
+/// （更多 / 搜索，点选在代理里被拦下，永远不会被选中）
+private struct NativeBarItemSpec: Equatable {
+    var id: String
+    var title: String?
+    var tab: AppTab?
+}
+
+/// 只供底栏的 UITabBarController 子类：每次布局后回调一次，让外壳量到
+/// 系统底栏的真实帧（条高 / 中心 / 底部安全区都读它，不猜常量）
+@available(iOS 26.0, *)
+private final class BarOnlyTabBarController: UITabBarController {
+    var onLayout: (() -> Void)?
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        onLayout?()
+    }
+}
+
+/// 只供底栏的 UITabBarController 包装：子 VC 全是透明占位（页面由 SwiftUI
+/// 的 ZStack 整屏托管），这个控制器唯一的产物就是它那条系统底栏——玻璃、
+/// 选中透镜、果冻滑动、图标与标签的着色排版全部由系统渲染，本文件不碰它
+/// 的任何 appearance，选中也只有系统那一份、没有任何自加的高亮层。
+/// 条目集随分组切换（A = 前 3 页 +「更多」；B = 其余页，出处不在条里），
+/// 搜索是真的 UISearchTab（iOS 26 里它在底栏右侧独立成圆钮，和 SwiftUI 的
+/// Tab(role: .search) 是同一个系统组件）。「更多」和搜索的点选在代理
+/// shouldSelectTab 里被拦下（不许选中），分别翻译成外壳的换组与打开搜索
+/// 伪页面；真实页面的点选经 didSelectTab 回报外壳切页——且 didSelect 只
+/// 转发紧跟着 shouldSelect 放行的那次（userInitiated 标记），程序化改选中
+/// 和条目集切换引起的回调一律丢弃，不许反过来改外壳状态
+@available(iOS 26.0, *)
+private struct NativeTabBarView: UIViewControllerRepresentable {
+    var items: [NativeBarItemSpec]
+    var selectedID: String
+    var interactionEnabled: Bool
+    var onSelectPage: (AppTab) -> Void
+    var onMore: () -> Void
+    var onSearch: () -> Void
+    var onMetrics: (_ stripHeight: CGFloat, _ centerFromBottom: CGFloat, _ safeBottom: CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> BarOnlyTabBarController {
+        let tbc = BarOnlyTabBarController()
+        tbc.delegate = context.coordinator
+        context.coordinator.parent = self
+        tbc.onLayout = { [weak tbc] in
+            guard let tbc else { return }
+            context.coordinator.reportMetrics(from: tbc)
+        }
+        apply(to: tbc, context: context)
+        return tbc
+    }
+
+    func updateUIViewController(_ tbc: BarOnlyTabBarController, context: Context) {
+        context.coordinator.parent = self
+        apply(to: tbc, context: context)
+    }
+
+    private func apply(to tbc: BarOnlyTabBarController, context: Context) {
+        // 条目集只在分组 / 排序真的变了时才重建（描述比对），避免每次刷新都换一遍 tab
+        if context.coordinator.lastSpecs != items {
+            context.coordinator.lastSpecs = items
+            tbc.tabs = items.map(makeTab)
+        }
+        // 选中同步（程序化设置；和用户点选分开，见 Coordinator 的 userInitiated）
+        if let target = tbc.tabs.first(where: { $0.identifier == selectedID }),
+           tbc.selectedTab?.identifier != selectedID {
+            tbc.selectedTab = target
+        }
+        // 搜索伪页面打开时整条底栏不吃点按（和旧玻璃外壳的行为一致：
+        // 关闭走搜索页自己的「关闭」按钮）
+        tbc.view.isUserInteractionEnabled = interactionEnabled
+    }
+
+    private func makeTab(_ spec: NativeBarItemSpec) -> UITab {
+        if spec.id == "search" {
+            return UISearchTab(viewControllerProvider: { _ in Self.placeholder() })
+        }
+        return UITab(title: spec.title ?? "", image: image(for: spec), identifier: spec.id,
+                     viewControllerProvider: { _ in Self.placeholder() })
+    }
+
+    /// 条目图标：账号 / 生成卡密用用户模板图（资源目录里是 template 渲染，
+    /// 系统按选中态着色，和 SF 符号同等待遇），其余页用 AppTab 的 SF 符号；
+    /// 「更多」用用户的圆圈省略号模板图
+    private func image(for spec: NativeBarItemSpec) -> UIImage? {
+        if let tab = spec.tab {
+            if let asset = tab.customIconAsset { return UIImage(named: asset) }
+            return UIImage(systemName: tab.icon)
+        }
+        if spec.id == "more" { return UIImage(named: "TabIconMore") }
+        return nil
+    }
+
+    /// 占位子 VC：透明空视图——页面不在这里渲染（SwiftUI ZStack 整屏托管），
+    /// 它存在的唯一意义是让系统底栏有合法的 tab 条目可排
+    private static func placeholder() -> UIViewController {
+        let vc = UIViewController()
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+
+    final class Coordinator: NSObject, UITabBarControllerDelegate {
+        var parent: NativeTabBarView?
+        var lastSpecs: [NativeBarItemSpec] = []
+        /// 最近一次被 shouldSelect 放行的真实页面点选 id：didSelect 只转发它，
+        /// 程序化 set selectedTab / 换条目集引发的回调没有这个标记，一律丢弃
+        private var userInitiated: String?
+
+        func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+            guard let parent else { return true }
+            if tab is UISearchTab {
+                // 同步回调（不再经主队列异步转发）：外壳状态必须和系统
+                // 底栏的选中同帧变更，迟一帧就是 Build 24 的页面重影
+                parent.onSearch()
+                return false
+            }
+            if tab.identifier == "more" {
+                parent.onMore()
+                return false
+            }
+            userInitiated = tab.identifier
+            return true
+        }
+
+        func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
+            guard let parent,
+                  userInitiated == selectedTab.identifier,
+                  let spec = parent.items.first(where: { $0.id == selectedTab.identifier }),
+                  let tab = spec.tab else { return }
+            userInitiated = nil
+            parent.onSelectPage(tab)
+        }
+
+        /// 量系统底栏的真实帧回填外壳：条高 = 栏顶到条底（条钉在窗口底边，
+        /// 条底 = 控制器视图底边）；中心距底、视图底部安全区一并报出，
+        /// 页面留白和出处圆钮对齐都读这份量测，不猜常量
+        func reportMetrics(from tbc: UITabBarController) {
+            guard let parent else { return }
+            let bar = tbc.tabBar
+            let bounds = tbc.view.bounds
+            guard bounds.height > 1, bar.frame.height > 1 else { return }
+            parent.onMetrics(bounds.height - bar.frame.minY,
+                             bounds.height - bar.frame.midY,
+                             tbc.view.safeAreaInsets.bottom)
         }
     }
 }
