@@ -10,13 +10,11 @@
 - `backend/smtp.php` — 发信邮箱配置模板（部署时放服务器 web 根外）
 - `app/` — 独立账号管理 iOS App 源码（GitHub Actions 打包）
 
-## 部署（域名 luioe.bbroot.com）
-1. `backend/` 三个文件（php + 两个 html）传到新站点根目录
-2. 数据库：默认读同目录 `luiyo.db`（与老系统同库，表自动创建；绑卡密读老 `licenses` 表）。
-   路径不同时设环境变量 `LUIYO_DB_PATH`
-3. SMTP：把 `smtp.php` 填上 QQ 邮箱 + 新生成的 16 位授权码，
-   放到 `/www/luiyo-private/smtp.php`（web 根外，安全）
-4. 管理员密码：与老后台共用 `/www/luiyo-private/admin.hash`
+## 部署
+1. `backend/` 三个文件（php + 两个 html）传到站点根目录
+2. 数据库与配置文件放在 web 根目录之外（不对公网暴露），后端启动时自动建表
+3. 发信配置：把 `smtp.php` 填上发信服务的凭据，放到 web 根外
+4. 管理员密码：密码哈希文件同样放在 web 根外
 
 ## 安全措施（已实现）
 1. 登录锁定：连错 5 次密码锁 15 分钟
