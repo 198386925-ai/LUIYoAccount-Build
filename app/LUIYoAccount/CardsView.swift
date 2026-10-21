@@ -4,6 +4,7 @@ import UIKit
 /// 生成卡密：批量生成（数量 + SVIP 天数）→ 列表管理（复制 / 作废 / 恢复），用户在主 App 绑卡开通
 struct CardsView: View {
     @EnvironmentObject var api: AccountAPI
+    @EnvironmentObject var fontStore: FontStore
     @State private var cards: [CardItem] = []
     @State private var countText = "10"
     @State private var days = 30
@@ -30,7 +31,7 @@ struct CardsView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
 
-                Section("生成卡密") {
+                Section {
                     HStack {
                         Text("数量")
                         Spacer()
@@ -67,12 +68,14 @@ struct CardsView: View {
                     }
                     .disabled(generating)
                     Text("格式：LUI-备注-随机码（备注可空）。天数从上面选，选「永久」就是永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
-                        .font(.footnote)
+                        .font(fontStore.font(.footnote))
                         .foregroundColor(.secondary)
+                } header: {
+                    AppSectionHeader("生成卡密")
                 }
 
                 if !newCodes.isEmpty {
-                    Section("刚生成（\(newCodes.count) 张）") {
+                    Section {
                         Button("复制全部") {
                             UIPasteboard.general.string = newCodes.joined(separator: "\n")
                             notice = "已复制 \(newCodes.count) 张卡密"
@@ -82,18 +85,20 @@ struct CardsView: View {
                         ForEach(newCodes, id: \.self) { code in
                             HStack {
                                 Text(code)
-                                    .font(.system(.footnote, design: .monospaced))
+                                    .font(fontStore.font(.footnote, design: .monospaced))
                                 Spacer()
                                 Button("复制") { UIPasteboard.general.string = code }
-                                    .font(.footnote)
+                                    .font(fontStore.font(.footnote))
                             }
                             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         }
+                    } header: {
+                        AppSectionHeader("刚生成（\(newCodes.count) 张）")
                     }
                 }
 
                 if cardFilter != .unused {
-                Section("已使用（\(usedCards.count)）") {
+                Section {
                     if usedCards.isEmpty {
                         Text("暂无已使用的卡密")
                             .foregroundColor(.secondary)
@@ -101,11 +106,13 @@ struct CardsView: View {
                     ForEach(usedCards) { card in
                         usedRow(card)
                     }
+                } header: {
+                    AppSectionHeader("已使用（\(usedCards.count)）")
                 }
                 }
 
                 if cardFilter != .used {
-                Section("未使用（\(unusedCards.count)）") {
+                Section {
                     if !unusedCards.isEmpty {
                         HStack(spacing: 18) {
                             Button("批量复制") { copyAllUnused() }
@@ -113,10 +120,10 @@ struct CardsView: View {
                                 .foregroundColor(.red)
                             Spacer()
                             Text("\(unusedCards.count) 张")
-                                .font(.caption)
+                                .font(fontStore.font(.caption))
                                 .foregroundColor(.secondary)
                         }
-                        .font(.footnote)
+                        .font(fontStore.font(.footnote))
                         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     }
                     if unusedCards.isEmpty {
@@ -126,6 +133,8 @@ struct CardsView: View {
                     ForEach(unusedCards) { card in
                         unusedRow(card)
                     }
+                } header: {
+                    AppSectionHeader("未使用（\(unusedCards.count)）")
                 }
                 }
             }
@@ -182,35 +191,34 @@ struct CardsView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(card.code)
-                    .font(.system(.footnote, design: .monospaced))
+                    .font(fontStore.font(.footnote, design: .monospaced))
                 Spacer()
                 statusBadge(card)
             }
             if !card.remark.isEmpty {
                 Text("备注：" + card.remark)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(fontStore.font(.caption, weight: .medium))
             }
             Text("账号：" + card.boundEmail)
-                .font(.caption)
+                .font(fontStore.font(.caption))
                 .foregroundColor(.green)
                 .lineLimit(1)
             if !card.boundUdid.isEmpty {
                 Text("UDID：" + card.boundUdid)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(fontStore.font(.caption2, design: .monospaced))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             } else {
                 Text("UDID：未获取")
-                    .font(.caption)
+                    .font(fontStore.font(.caption))
                     .foregroundColor(.secondary)
             }
             Text("时长 " + card.daysText + " · 生成于 " + card.createdText)
-                .font(.caption)
+                .font(fontStore.font(.caption))
                 .foregroundColor(.secondary)
             if card.boundAt > 0 {
                 Text("绑定时间：" + card.boundAtText)
-                    .font(.caption)
+                    .font(fontStore.font(.caption))
                     .foregroundColor(.secondary)
             }
         }
@@ -241,17 +249,16 @@ struct CardsView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(card.code)
-                    .font(.system(.footnote, design: .monospaced))
+                    .font(fontStore.font(.footnote, design: .monospaced))
                 Spacer()
                 statusBadge(card)
             }
             if !card.remark.isEmpty {
                 Text("备注：" + card.remark)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(fontStore.font(.caption, weight: .medium))
             }
             Text(detailLine(card))
-                .font(.caption)
+                .font(fontStore.font(.caption))
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 1)
@@ -313,7 +320,7 @@ struct CardsView: View {
             ? ("已作废", .red)
             : (card.isBound ? ("已绑定", .green) : ("未使用", .gray))
         return Text(text)
-            .font(.caption2)
+            .font(fontStore.font(.caption2))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(color.opacity(0.15))

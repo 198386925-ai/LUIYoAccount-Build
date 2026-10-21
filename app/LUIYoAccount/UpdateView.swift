@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// 应用更新：查看线上版本 + 上传主 App 的 IPA（走 app-update.php，与账号管理同一密码）
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
+    @EnvironmentObject var fontStore: FontStore
     @State private var latest: LatestRelease?
     @State private var latestLoaded = false
     @State private var showPicker = false
@@ -21,22 +22,24 @@ struct UpdateView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section("线上版本（主 App 更新源）") {
+                Section {
                     if let l = latest {
                         LabeledContent("最新版本", value: l.tagName)
                         LabeledContent("安装包", value: l.assetName)
                         LabeledContent("大小", value: sizeText(l.assetSize))
                         if let b = l.body, !b.isEmpty {
-                            Text(b).font(.footnote).foregroundColor(.secondary)
+                            Text(b).font(fontStore.font(.footnote)).foregroundColor(.secondary)
                         }
                     } else {
                         Text(latestLoaded ? "尚未发布任何版本" : "读取中…")
                             .foregroundColor(.secondary)
                     }
                     Button("刷新") { Task { await loadLatest() } }
+                } header: {
+                    AppSectionHeader("线上版本（主 App 更新源）")
                 }
 
-                Section("上传新 IPA") {
+                Section {
                     Button {
                         showPicker = true
                     } label: {
@@ -65,14 +68,16 @@ struct UpdateView: View {
                     }
                     .disabled(pickedURL == nil || uploading)
                     if let m = resultMsg {
-                        Text(m).font(.footnote)
+                        Text(m).font(fontStore.font(.footnote))
                             .foregroundColor(resultOK ? .green : .red)
                     }
+                } header: {
+                    AppSectionHeader("上传新 IPA")
                 }
 
                 Section {
                     Text("上传后包会改名为 LUIYo-版本-b构建.ipa 并更新 latest.json，主 App 检查更新即可发现。更新源：https://luioe.bbroot.com/updates/latest.json")
-                        .font(.footnote).foregroundColor(.secondary)
+                        .font(fontStore.font(.footnote)).foregroundColor(.secondary)
                 }
             }
             .compactSectionSpacing()

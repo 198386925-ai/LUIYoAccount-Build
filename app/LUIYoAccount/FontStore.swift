@@ -12,13 +12,25 @@ struct ImportedFont: Identifiable, Equatable {
 }
 
 /// 全局字体仓库：导入 / 注册 / 枚举 / 删除 Documents/Fonts/ 里的字体文件
+/// 同时是全 App 的字体供应者：选中的字体 + 适配系数（factor）都从这里出，
+/// 所有界面的文字都走 font(_:) 拿字体，不再直接写 .font(.caption) 这类系统语义字体
+/// （那样会绕过自定义字体，出现一半自定义一半系统的混排）。
 final class FontStore: ObservableObject {
     static let shared = FontStore()
     static let defaultsKey = "globalFontPS"
 
     @Published private(set) var fonts: [ImportedFont] = []
+    /// 当前选中的字体 PostScript 名（空 = 系统默认），改了立刻全 App 重渲染
+    @Published private(set) var psName: String = ""
+    /// 适配系数：自定义字体的字面通常比系统字体大，按 capHeight 比例把字号压回正常观感
+    @Published private(set) var factor: CGFloat = 1
 
-    private init() { refresh() }
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
+        psName = saved
+        factor = Self.computeFactor(psName: saved)
+        refresh()
+    }
 
     static var fontsDir: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -31,6 +43,95 @@ final class FontStore: ObservableObject {
     static var selectedPS: String {
         get { UserDefaults.standard.string(forKey: defaultsKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: defaultsKey) }
+    }
+
+    /// 切换字体（空 = 系统默认）：存盘 + 重算系数 + 刷新 UIKit 外观（导航栏/分段切换/标签栏）
+    func select(_ name: String) {
+        psName = name
+        UserDefaults.standard.set(name, forKey: Self.defaultsKey)
+        factor = Self.computeFactor(psName: name)
+        Self.applyUIKitAppearances()
+    }
+
+    /// 适配系数 = 系统字体 capHeight / 自定义字体 capHeight（同为 17pt 时测），夹在 [0.6, 1.05]
+    static func computeFactor(psName: String) -> CGFloat {
+        guard !psName.isEmpty, let custom = UIFont(name: psName, size: 17) else { return 1 }
+        let sys = UIFont.systemFont(ofSize: 17)
+        guard custom.capHeight > 0 else { return 1 }
+        let raw = sys.capHeight / custom.capHeight
+        return min(1.05, max(0.6, raw))
+    }
+
+    /// 语义样式对应的标准字号（Dynamic Type 默认档）
+    static func baseSize(for style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: return 34
+        case .title: return 28
+        case .title2: return 22
+        case .title3: return 20
+        case .headline, .body: return 17
+        case .callout: return 16
+        case .subheadline: return 15
+        case .footnote: return 13
+        case .caption: return 12
+        case .caption2: return 11
+        default: return 17
+        }
+    }
+
+    /// 全 App 统一的字体出口：没选自定义字体时是系统语义字体；
+    /// 选了就用 Font.custom + 系数缩放（relativeTo 保留 Dynamic Type 相对缩放）
+    func font(_ style: Font.TextStyle, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
+        if psName.isEmpty {
+            var f = Font.system(style, design: design)
+            if let w = weight { f = f.weight(w) }
+            return f
+        }
+        var w = weight
+        if w == nil && style == .headline { w = .semibold }  // headline 本来就带半粗，保持观感
+        var f = Font.custom(psName, size: Self.baseSize(for: style) * factor, relativeTo: style)
+        if let w { f = f.weight(w) }
+        return f
+    }
+
+    /// 按 factor 缩放后的 UIKit 字体（给导航栏 / 分段切换 / 标签栏用）
+    private static func uiFont(psName: String, size: CGFloat) -> UIFont? {
+        UIFont(name: psName, size: size * computeFactor(psName: psName))
+    }
+
+    /// 把 UIKit 控件外观刷成当前字体：导航栏标题（17/34 × factor）、
+    /// 分段切换（15 × factor，比正文小一号，白边看着才正常）、标签栏小字（10 × factor）
+    static func applyUIKitAppearances() {
+        let ps = shared.psName
+        let bar = UINavigationBar.appearance()
+        let seg = UISegmentedControl.appearance()
+        let tabItem = UITabBarItem.appearance()
+        if ps.isEmpty {
+            bar.titleTextAttributes = nil
+            bar.largeTitleTextAttributes = nil
+            seg.setTitleTextAttributes(nil, for: .normal)
+            seg.setTitleTextAttributes(nil, for: .selected)
+            tabItem.setTitleTextAttributes(nil, for: .normal)
+            tabItem.setTitleTextAttributes(nil, for: .selected)
+            return
+        }
+        if let t = uiFont(psName: ps, size: 17) { bar.titleTextAttributes = [.font: t] }
+        if let lt = uiFont(psName: ps, size: 34) { bar.largeTitleTextAttributes = [.font: lt] }
+        if let sf = uiFont(psName: ps, size: 15) {
+            let attrs: [NSAttributedString.Key: Any] = [.font: sf]
+            seg.setTitleTextAttributes(attrs, for: .normal)
+            seg.setTitleTextAttributes(attrs, for: .selected)
+        }
+        if let tf = uiFont(psName: ps, size: 10) {
+            let attrs: [NSAttributedString.Key: Any] = [.font: tf]
+            tabItem.setTitleTextAttributes(attrs, for: .normal)
+            tabItem.setTitleTextAttributes(attrs, for: .selected)
+        }
+    }
+
+    /// 兼容旧调用点：等价于 applyUIKitAppearances()
+    static func applyNavigationBarFont(psName: String) {
+        applyUIKitAppearances()
     }
 
     static func isFontFile(_ url: URL) -> Bool {
@@ -86,7 +187,7 @@ final class FontStore: ObservableObject {
 
     func delete(_ font: ImportedFont) {
         try? FileManager.default.removeItem(at: font.fileURL)
-        if Self.selectedPS == font.psName { Self.selectedPS = "" }
+        if psName == font.psName { select("") }
         refresh()
     }
 
@@ -95,35 +196,25 @@ final class FontStore: ObservableObject {
               let d = descs.first else { return nil }
         return CTFontCreateWithFontDescriptor(d, 0, nil)
     }
+}
 
-    /// 把导航栏标题字体切到指定字体；空 = 恢复系统默认
-    static func applyNavigationBarFont(psName: String) {
-        let bar = UINavigationBar.appearance()
-        if psName.isEmpty {
-            bar.titleTextAttributes = nil
-            bar.largeTitleTextAttributes = nil
-        } else {
-            if let t = UIFont(name: psName, size: 17) {
-                bar.titleTextAttributes = [.font: t]
-            }
-            if let lt = UIFont(name: psName, size: 34) {
-                bar.largeTitleTextAttributes = [.font: lt]
-            }
-        }
+/// 全局默认字体：没被单独指定字体的文字（输入框、LabeledContent、菜单标签等）走这里
+struct GlobalFontModifier: ViewModifier {
+    @EnvironmentObject var fontStore: FontStore
+    func body(content: Content) -> some View {
+        content.environment(\.font, fontStore.font(.body))
     }
 }
 
-/// 选中了自定义字体时，把环境默认字体换掉（没写死字体的文字都会跟着变）
-struct GlobalFontModifier: ViewModifier {
-    let psName: String
-    func body(content: Content) -> some View {
-        Group {
-            if psName.isEmpty {
-                content
-            } else {
-                content.environment(\.font, Font.custom(psName, size: 17))
-            }
-        }
+/// 分组标题：显式走 fontStore，自定义字体时不再漏掉 Section 标题
+struct AppSectionHeader: View {
+    @EnvironmentObject var fontStore: FontStore
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(fontStore.font(.footnote))
+            .foregroundColor(.secondary)
     }
 }
 

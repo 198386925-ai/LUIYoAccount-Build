@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject var api: AccountAPI
+    @EnvironmentObject var fontStore: FontStore
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
@@ -13,9 +14,9 @@ struct LoginView: View {
                 .font(.system(size: 64))
                 .foregroundColor(.blue)
             Text("LUIYo账号")
-                .font(.title2).bold()
+                .font(fontStore.font(.title2, weight: .bold))
             Text("邮箱账号授权管理")
-                .font(.subheadline)
+                .font(fontStore.font(.subheadline))
                 .foregroundColor(.secondary)
             SecureField("管理员密码", text: $password)
                 .textFieldStyle(.roundedBorder)

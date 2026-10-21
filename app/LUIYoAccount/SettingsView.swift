@@ -4,8 +4,7 @@ import UIKit
 /// 设置：全局字体（可导入自己的字体文件）/ 服务器信息 / 本机版本 / 退出登录
 struct SettingsView: View {
     @EnvironmentObject var api: AccountAPI
-    @StateObject private var fontStore = FontStore.shared
-    @AppStorage(FontStore.defaultsKey) private var globalFontPS = ""
+    @EnvironmentObject var fontStore: FontStore
     @State private var showFontPicker = false
     @State private var fontError: String?
 
@@ -19,15 +18,15 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section("全局字体") {
+                Section {
                     Button {
-                        globalFontPS = ""
+                        fontStore.select("")
                     } label: {
                         HStack {
                             Text("系统默认")
                                 .foregroundColor(.primary)
                             Spacer()
-                            if globalFontPS.isEmpty {
+                            if fontStore.psName.isEmpty {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(.accentColor)
                             }
@@ -35,15 +34,15 @@ struct SettingsView: View {
                     }
                     ForEach(fontStore.fonts) { f in
                         Button {
-                            globalFontPS = f.psName
+                            fontStore.select(f.psName)
                         } label: {
                             HStack {
                                 Text(f.displayName)
-                                    .font(Font.custom(f.psName, size: 17))
+                                    .font(Font.custom(f.psName, size: 17 * FontStore.computeFactor(psName: f.psName)))
                                     .foregroundColor(.primary)
                                     .lineLimit(1)
                                 Spacer()
-                                if globalFontPS == f.psName {
+                                if fontStore.psName == f.psName {
                                     Image(systemName: "checkmark")
                                         .foregroundColor(.accentColor)
                                 }
@@ -62,17 +61,23 @@ struct SettingsView: View {
                         }
                     }
                     Text("选中后立即全局生效，标题和正文都会换成该字体；少数系统控件可能仍用系统字体。导入的字体向左滑可删除，存本机、重启也在。")
-                        .font(.footnote)
+                        .font(fontStore.font(.footnote))
                         .foregroundColor(.secondary)
+                } header: {
+                    AppSectionHeader("全局字体")
                 }
-                Section("服务器") {
+                Section {
                     LabeledContent("地址", value: "luioe.bbroot.com")
                     LabeledContent("账号接口", value: "user-auth-v2.php")
                     LabeledContent("更新源", value: "updates/latest.json")
+                } header: {
+                    AppSectionHeader("服务器")
                 }
-                Section("本机 App") {
+                Section {
                     LabeledContent("版本", value: versionText)
                     LabeledContent("登录状态", value: api.loggedIn ? "已登录（密码已保存，自动登录）" : "未登录")
+                } header: {
+                    AppSectionHeader("本机 App")
                 }
                 Section {
                     Button("退出登录", role: .destructive) {
@@ -81,7 +86,7 @@ struct SettingsView: View {
                 }
                 Section {
                     Text("退出后下次打开需要重新输入管理员密码。账号、卡密、应用更新三个页面共用这一个密码。")
-                        .font(.footnote)
+                        .font(fontStore.font(.footnote))
                         .foregroundColor(.secondary)
                 }
             }
@@ -91,7 +96,7 @@ struct SettingsView: View {
                 FontDocumentPicker { url in
                     guard let url else { return }
                     do {
-                        globalFontPS = try fontStore.importFont(from: url)
+                        fontStore.select(try fontStore.importFont(from: url))
                     } catch {
                         fontError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     }

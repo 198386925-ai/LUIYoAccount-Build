@@ -4,6 +4,7 @@ import SwiftUI
 /// + 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
+    @EnvironmentObject var fontStore: FontStore
     @State private var list: [AccountUser] = []
     @State private var loading = false
     @State private var error: String?
@@ -35,7 +36,7 @@ struct AccountsView: View {
                     ProgressView()
                 } else if list.isEmpty {
                     Text("暂无账号（确认新后端已部署到 luioe.bbroot.com）")
-                        .font(.body)
+                        .font(fontStore.font(.body))
                         .foregroundColor(.secondary)
                         .padding()
                 } else {
@@ -52,19 +53,23 @@ struct AccountsView: View {
 
                         switch filter {
                         case .all:
-                            Section("已授权（\(svipAccounts.count)）") {
+                            Section {
                                 if svipAccounts.isEmpty {
                                     Text("暂无已授权账号")
                                         .foregroundColor(.secondary)
                                 }
                                 ForEach(svipAccounts) { u in accountRow(u) }
+                            } header: {
+                                AppSectionHeader("已授权（\(svipAccounts.count)）")
                             }
-                            Section("未授权（\(freeAccounts.count)）") {
+                            Section {
                                 if freeAccounts.isEmpty {
                                     Text("暂无未授权账号")
                                         .foregroundColor(.secondary)
                                 }
                                 ForEach(freeAccounts) { u in accountRow(u) }
+                            } header: {
+                                AppSectionHeader("未授权（\(freeAccounts.count)）")
                             }
                         case .svip:
                             if svipAccounts.isEmpty {
@@ -120,7 +125,7 @@ struct AccountsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(u.email)
-                    .font(.headline)
+                    .font(fontStore.font(.headline))
                     .lineLimit(1)
                 Spacer()
                 if u.isBanned {
@@ -136,7 +141,7 @@ struct AccountsView: View {
             }
             if u.isBanned && !u.banReason.isEmpty {
                 Text("封禁理由：" + u.banReason)
-                    .font(.caption)
+                    .font(fontStore.font(.caption))
                     .foregroundColor(.red)
             }
             HStack {
@@ -144,11 +149,11 @@ struct AccountsView: View {
                 Text("·")
                 Text("最后登录 " + u.lastLoginText)
             }
-            .font(.caption)
+            .font(fontStore.font(.caption))
             .foregroundColor(.secondary)
             if !u.udid.isEmpty {
                 Text("UDID " + u.udid)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(fontStore.font(.caption2, design: .monospaced))
                     .foregroundColor(.secondary)
                     .textSelection(.enabled)
             }
@@ -159,7 +164,7 @@ struct AccountsView: View {
                     Text("SVIP 到期 " + u.svipExpiresText)
                 }
             }
-            .font(.caption)
+            .font(fontStore.font(.caption))
             .foregroundColor(.secondary)
         }
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
@@ -187,7 +192,7 @@ struct AccountsView: View {
 
     private func tag(_ s: String, bg: Color, fg: Color) -> some View {
         Text(s)
-            .font(.caption)
+            .font(fontStore.font(.caption))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(bg)
             .foregroundColor(fg)
