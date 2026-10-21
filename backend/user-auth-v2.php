@@ -111,6 +111,13 @@ $db->exec("CREATE TABLE IF NOT EXISTS udid_enroll (
     used INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL
 )");
+$db->exec("CREATE TABLE IF NOT EXISTS mail_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_email TEXT NOT NULL,
+    subject TEXT DEFAULT '',
+    ok INTEGER DEFAULT 0,
+    created_at INTEGER DEFAULT 0
+)");
 
 // ---------- 工具 ----------
 function resp($ok, $data = []) { echo json_encode(array_merge(['ok' => $ok], $data), JSON_UNESCAPED_UNICODE); exit; }
@@ -133,10 +140,13 @@ function admin_authed($in) {
     return false;
 }
 
-// ---------- QQ 邮箱 SMTP ----------
-function send_qq_email($to, $subject, $body) {
+// ---------- SMTP 发信（通道由 smtp.php 配置决定：QQ / Resend） ----------
+function send_qq_email_raw($to, $subject, $body) {
     global $SMTP;
-    $fp = @stream_socket_client("ssl://smtp.qq.com:465", $errno, $errstr, 15);
+    $host = $SMTP['host'] ?? 'smtp.qq.com';
+    $port = $SMTP['port'] ?? 465;
+    $from = $SMTP['from'] ?? $SMTP['user'];
+    $fp = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, 15);
     if (!$fp) return false;
     $read = function() use ($fp) { return fgets($fp, 512); };
     $send = function($s) use ($fp) { fwrite($fp, $s . "\r\n"); };
@@ -146,10 +156,10 @@ function send_qq_email($to, $subject, $body) {
     $send(base64_encode($SMTP['user'])); $read();
     $send(base64_encode($SMTP['pass'])); $r = $read();
     if (strpos($r, '235') === false) { fclose($fp); return false; }
-    $send("MAIL FROM:<" . $SMTP['user'] . ">"); $read();
+    $send("MAIL FROM:<" . $from . ">"); $read();
     $send("RCPT TO:<$to>"); $read();
     $send("DATA"); $read();
-    $headers = "From: " . $SMTP['name'] . " <" . $SMTP['user'] . ">\r\n";
+    $headers = "From: " . $SMTP['name'] . " <" . $from . ">\r\n";
     $headers .= "To: <$to>\r\n";
     $headers .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n";
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
@@ -157,6 +167,17 @@ function send_qq_email($to, $subject, $body) {
     $r = $read();
     $send("QUIT"); fclose($fp);
     return strpos($r, '250') !== false;
+}
+
+// ---------- 发信入口：发送 + 自动记入 mail_log（后台「邮件发送记录」可查） ----------
+function send_qq_email($to, $subject, $body) {
+    global $db;
+    $ok = send_qq_email_raw($to, $subject, $body);
+    try {
+        $db->prepare("INSERT INTO mail_log (to_email, subject, ok, created_at) VALUES (?,?,?,?)")
+           ->execute([$to, $subject, $ok ? 1 : 0, time()]);
+    } catch (Throwable $e) { /* 记日志失败不影响发信本身 */ }
+    return $ok;
 }
 
 $action = $_GET['action'] ?? '';
@@ -423,13 +444,19 @@ if ($action === 'status') {
 }
 
 // ============ 管理员接口 ============
-if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card', 'admin_delete_card'], true)) {
+if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card', 'admin_delete_card', 'admin_mail_log'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
         $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
         $list = [];
         while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $r['svip'] = $r['svip_expires_at'] > $now; $list[] = $r; }
         resp(true, ['users' => $list, 'total' => count($list)]);
+    }
+    if ($action === 'admin_mail_log') {
+        $st = $db->query("SELECT id, to_email, subject, ok, created_at FROM mail_log ORDER BY id DESC LIMIT 300");
+        $logs = [];
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) $logs[] = $r;
+        resp(true, ['logs' => $logs, 'total' => count($logs)]);
     }
     $email = strtolower(trim($in['email'] ?? ''));
     if ($action === 'admin_ban') {

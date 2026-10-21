@@ -32,6 +32,11 @@ small{color:#888}
 <div id="cardList" style="margin-top:8px"><small>卡密列表（生成后自动刷新）</small></div>
 </div>
 <div class="card">
+<h3 style="margin:4px 0 8px">邮件发送记录</h3>
+<button class="gray" onclick="loadMail()">刷新邮件记录</button>
+<div id="mailList" style="margin-top:8px"><small>每次发验证码 / 换设备确认信都会自动记在这（最近 300 条）</small></div>
+</div>
+<div class="card">
 <h3 style="margin:4px 0 8px">应用更新（上传 IPA）</h3>
 <div id="curVer"><small>线上版本读取中…</small></div>
 <input id="ipaFile" type="file" accept=".ipa" onchange="ipaPicked()">
@@ -73,6 +78,7 @@ async function load(){
   });
   document.getElementById('list').innerHTML=h||'<small>暂无账号</small>';
   loadCards();
+  loadMail();
 }
 async function ban(email,b){
   let reason=''; if(b===1){reason=prompt('封禁理由（可空）')||'';}
@@ -125,6 +131,19 @@ async function loadCards(){
   h+=used.length?used.map(c=>cardRow(c,true)).join(''):'<small>暂无</small>';
   h+='<h4 style="margin:10px 0 6px">未使用（'+free.length+'）</h4>';
   h+=free.length?free.map(c=>cardRow(c,false)).join(''):'<small>暂无</small>';
+  el.innerHTML=h;
+}
+async function loadMail(){
+  const d=await post('admin_mail_log');
+  const el=document.getElementById('mailList');
+  if(!d.ok){el.innerHTML='<small>'+(d.error||'加载失败')+'</small>';return;}
+  if(!d.logs.length){el.innerHTML='<small>暂无发信记录</small>';return;}
+  let h='';
+  d.logs.forEach(m=>{
+    h+='<div class="u"><b>'+m.to_email+'</b> '
+      +(m.ok==1?'<span class="tag svip">发送成功</span>':'<span class="tag ban">发送失败</span>')+'<br>'
+      +'<small>'+m.subject+' · '+new Date(m.created_at*1000).toLocaleString()+'</small></div>';
+  });
   el.innerHTML=h;
 }
 async function disableCard(id,dis){const d=await post('admin_disable_card',{id:id,disabled:dis}); alert(d.msg||d.error); loadCards();}

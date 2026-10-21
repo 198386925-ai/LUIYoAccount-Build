@@ -95,6 +95,14 @@ class AccountAPI: ObservableObject {
         guard r.ok else { throw APIError.server(r.error ?? "删除失败") }
     }
 
+    // MARK: - 邮件发送记录（注册验证码 / 换设备确认信的发送日志）
+
+    func mailLogs() async throws -> [MailLogItem] {
+        let r: MailLogResp = try await post(action: "admin_mail_log", params: [:])
+        guard r.ok, let list = r.logs else { throw APIError.server(r.error ?? "获取失败") }
+        return list
+    }
+
     // MARK: - 应用更新（app-update.php，与账号管理共用密码）
 
     func fetchLatest() async -> LatestRelease? {

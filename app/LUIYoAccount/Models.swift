@@ -178,3 +178,45 @@ struct GenCardsResp: Decodable {
     let count: Int?
     let days: Int?
 }
+
+// MARK: - 邮件发送记录（mail_log，admin_mail_log）
+struct MailLogItem: Decodable, Identifiable {
+    let id: Int
+    let toEmail: String
+    let subject: String
+    let ok: Bool
+    let createdAt: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, subject, ok
+        case toEmail = "to_email"
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(Int.self, forKey: .id)) ?? 0
+        toEmail = (try? c.decode(String.self, forKey: .toEmail)) ?? ""
+        subject = (try? c.decode(String.self, forKey: .subject)) ?? ""
+        if let b = try? c.decode(Bool.self, forKey: .ok) { ok = b }
+        else if let i = try? c.decode(Int.self, forKey: .ok) { ok = i != 0 }
+        else if let t = try? c.decode(String.self, forKey: .ok) { ok = (t == "1") }
+        else { ok = false }
+        createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
+    }
+
+    var createdText: String {
+        guard createdAt > 0 else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt)))
+    }
+}
+
+struct MailLogResp: Decodable {
+    let ok: Bool
+    let error: String?
+    let logs: [MailLogItem]?
+    let total: Int?
+}

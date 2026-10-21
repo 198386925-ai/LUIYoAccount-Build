@@ -12,6 +12,8 @@ struct ContentView: View {
                         .tabItem { Label("账号", systemImage: "person.2.fill") }
                     CardsView()
                         .tabItem { Label("生成卡密", systemImage: "ticket.fill") }
+                    MailLogView()
+                        .tabItem { Label("邮件", systemImage: "envelope.fill") }
                     UpdateView()
                         .tabItem { Label("应用更新", systemImage: "arrow.up.circle.fill") }
                     SettingsView()
