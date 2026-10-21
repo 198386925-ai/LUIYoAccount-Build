@@ -6,9 +6,6 @@ import SwiftUI
 struct GlobalSearchView: View {
     @EnvironmentObject var api: AccountAPI
     let onSelect: (AppTab) -> Void
-    /// 关闭回调（玻璃外壳里搜索是盖在页面上的伪页面，需要返回入口）；
-    /// 旧 TabView 外壳里搜索本身就是一个 tab，传 nil 就不显示关闭按钮
-    var onClose: (() -> Void)? = nil
 
     @State private var query = ""
     @State private var accounts: [AccountUser] = []
@@ -118,13 +115,6 @@ struct GlobalSearchView: View {
                 }
             }
             .navigationTitle("全局搜索")
-            .toolbar {
-                if let onClose {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("关闭") { onClose() }
-                    }
-                }
-            }
             .searchable(text: $query, prompt: "搜索账号 / 卡密 / 邮件")
             .task { await loadIfNeeded() }
         }

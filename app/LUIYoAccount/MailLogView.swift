@@ -18,7 +18,7 @@ struct MailLogView: View {
                     }
                     ForEach(logs) { m in
                         HStack(alignment: .center, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 1) {
                                 Text(m.toEmail)
                                     .appFont(.subheadline, weight: .bold)
                                 if !m.subject.isEmpty {
@@ -40,7 +40,7 @@ struct MailLogView: View {
                                 .foregroundColor(.white)
                                 .clipShape(Capsule())
                         }
-                        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
+                        .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
                     }
                 }
             }

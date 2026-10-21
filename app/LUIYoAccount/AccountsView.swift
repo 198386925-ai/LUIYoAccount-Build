@@ -165,8 +165,9 @@ struct AccountsView: View {
                 Text("封禁")
                     .appFont(.body, weight: .semibold)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
             }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .disabled(banEmail.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -185,6 +186,8 @@ struct AccountsView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         }
+        // 封禁表单行上下压紧（布局/标签不变，只收行高）
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 
     private func submitBanForm() {
@@ -201,7 +204,7 @@ struct AccountsView: View {
 
     private func bannedRow(_ u: AccountUser) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
@@ -212,7 +215,7 @@ struct AccountsView: View {
             Spacer(minLength: 6)
             tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
         }
-        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
+        .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
         .swipeActions(edge: .trailing) {
             Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
                 .tint(.green)
@@ -236,7 +239,7 @@ struct AccountsView: View {
 
     private func accountRow(_ u: AccountUser) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
@@ -266,7 +269,7 @@ struct AccountsView: View {
             }
             Spacer(minLength: 6)
             // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 1) {
                 if u.isBanned {
                     tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
                 } else if u.svip {
@@ -279,7 +282,7 @@ struct AccountsView: View {
                 }
             }
         }
-        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
+        .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
         .swipeActions(edge: .trailing) {
             if u.isBanned {
                 Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }

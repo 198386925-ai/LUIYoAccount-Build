@@ -121,16 +121,12 @@ final class FontStore: ObservableObject {
 
     /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放；
     /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）。
-    /// 小字样式（caption / caption2 / footnote——用户所有「间距远」的反馈都出在这几档）再额外
-    /// 收紧一份：12pt 参考下 −1pt，按渲染字号等比缩放，和墨迹补偿合起来一起过 45% 安全线。
-    /// 这个量在离线用用户字体真渲染验过：CJK 墨迹间隙仍为正、不会叠字，不能再大
+    /// 纯墨迹补偿，不再叠加任何额外收紧（Build 13 给小字加的那份已按用户要求撤回——
+    /// 他说的「间距」其实是上下行距，不是左右字距）
     func scaledTracking(for style: Font.TextStyle) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
         let rendered = Self.baseSize(for: style) * factor * Self.fixedScale
-        var raw = trackingCompensation * rendered / 17
-        if style == .caption || style == .caption2 || style == .footnote {
-            raw += -1.0 * rendered / 12
-        }
+        let raw = trackingCompensation * rendered / 17
         return max(raw, -0.45 * rendered)
     }
 
@@ -342,11 +338,12 @@ struct AppSectionHeader: View {
 }
 
 extension View {
-    /// iOS 17+ 收紧分组间距；iOS 16 没有这个 API 就跳过
+    /// iOS 17+ 收紧分组间距（显式 6pt，比 .compact 再紧一点，分组标题贴卡片更近）；
+    /// iOS 16 没有这个 API 就跳过
     @ViewBuilder
     func compactSectionSpacing() -> some View {
         if #available(iOS 17, *) {
-            self.listSectionSpacing(.compact)
+            self.listSectionSpacing(6)
         } else {
             self
         }

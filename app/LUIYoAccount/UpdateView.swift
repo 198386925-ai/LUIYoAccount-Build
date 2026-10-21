@@ -119,7 +119,7 @@ struct UpdateView: View {
 
     private func versionRow(_ v: VersionEntry) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("\(v.version) · Build \(v.build)")
                     .appFont(.headline)
                 Text("发布于 " + v.publishedText)
@@ -136,7 +136,7 @@ struct UpdateView: View {
             // 状态标识对整行上下居中（不再贴在标题那一行）
             versionChip(v)
         }
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
         .swipeActions(edge: .trailing) {
             Button("弹更新") { Task { await setVersionState(v, "soft") } }
                 .tint(.orange)
