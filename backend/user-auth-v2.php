@@ -518,8 +518,8 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
         if (mb_strlen($remark) > 20) $remark = mb_substr($remark, 0, 20);
         $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         $codes = [];
-        $ins = $db->prepare("INSERT INTO licenses (code_plain, disabled, days, created_at, remark) VALUES (?, 0, ?, ?, ?)");
-        $guard = 0;
+        $ins = $db->prepare("INSERT INTO licenses (code_hash, code_plain, disabled, days, created_at, remark) VALUES (?, ?, 0, ?, ?, ?)");
+        $guard = 0; $lastErr = '';
         while (count($codes) < $count && $guard < $count * 30) {
             $guard++;
             $parts = [];
@@ -530,8 +530,9 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
             }
             $rand = implode('-', $parts);
             $code = $remark !== '' ? ('LUI-' . $remark . '-' . $rand) : ('LUI-' . $rand);
-            try { $ins->execute([$code, $days, $now, $remark]); $codes[] = $code; } catch (Exception $e) { /* 撞码重试 */ }
+            try { $ins->execute([hash('sha256', $code), $code, $days, $now, $remark]); $codes[] = $code; } catch (Exception $e) { $lastErr = $e->getMessage(); /* 撞码重试 */ }
         }
+        if (count($codes) === 0) resp(false, ['error' => '生成失败：' . ($lastErr !== '' ? $lastErr : '未知错误')]);
         resp(true, ['codes' => $codes, 'count' => count($codes), 'days' => $days, 'remark' => $remark]);
     }
     if ($action === 'admin_list_cards') {
