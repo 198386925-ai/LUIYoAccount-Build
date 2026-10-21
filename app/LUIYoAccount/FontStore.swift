@@ -28,6 +28,11 @@ final class FontStore: ObservableObject {
     /// 量出它每个字比系统字体多占的宽度取负，套字体时用 tracking 收回来
     @Published private(set) var trackingCompensation: CGFloat = 0
 
+    /// 固定字号系数：全 App 字号锁死 = 基准字号 × factor × fixedScale，不再带相对字号
+    /// 跟随 Dynamic Type 浮动——之前输入框一获得焦点，环境重算字号就小一档（用户实拍），
+    /// 现在按那个聚焦后的较小尺寸（×0.9）定死，点不点都不变。根视图再锁 .dynamicTypeSize(.large)。
+    static let fixedScale: CGFloat = 0.9
+
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
         psName = saved
@@ -118,7 +123,7 @@ final class FontStore: ObservableObject {
     /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）
     func scaledTracking(for style: Font.TextStyle) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
-        let rendered = Self.baseSize(for: style) * factor
+        let rendered = Self.baseSize(for: style) * factor * Self.fixedScale
         let raw = trackingCompensation * rendered / 17
         return max(raw, -0.45 * rendered)
     }
@@ -126,19 +131,19 @@ final class FontStore: ObservableObject {
     /// 指定字号版的字距补偿（同样夹 45% 安全线）
     func scaledTracking(forSize size: CGFloat) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
-        let rendered = size * factor
+        let rendered = size * factor * Self.fixedScale
         let raw = trackingCompensation * rendered / 17
         return max(raw, -0.45 * rendered)
     }
 
-    /// 指定字号的字体出口（PillSegmented 的 12.5pt 标签等非语义字号用）
+    /// 指定字号的字体出口（PillSegmented 的 12.5pt 标签等非语义字号用）：字号同样锁死
     func font(size: CGFloat, weight: Font.Weight? = nil) -> Font {
         if psName.isEmpty {
-            var f = Font.system(size: size)
+            var f = Font.system(size: size * Self.fixedScale)
             if let w = weight { f = f.weight(w) }
             return f
         }
-        var f = Font.custom(psName, size: size * factor)
+        var f = Font.custom(psName, size: size * factor * Self.fixedScale)
         if let w = weight { f = f.weight(w) }
         return f
     }
@@ -160,17 +165,19 @@ final class FontStore: ObservableObject {
         }
     }
 
-    /// 全 App 统一的字体出口：没选自定义字体时是系统语义字体；
-    /// 选了就用 Font.custom + 系数缩放（relativeTo 保留 Dynamic Type 相对缩放）
+    /// 全 App 统一的字体出口：字号锁死 = 语义基准字号 × factor × fixedScale，
+    /// 不带相对字号、不跟 Dynamic Type 浮动（输入框聚焦时字号不再跳变）；
+    /// 没选自定义字体时是同尺寸的系统字体
     func font(_ style: Font.TextStyle, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
-        if psName.isEmpty {
-            var f = Font.system(style, design: design)
-            if let w = weight { f = f.weight(w) }
-            return f
-        }
         var w = weight
         if w == nil && style == .headline { w = .semibold }  // headline 本来就带半粗，保持观感
-        var f = Font.custom(psName, size: Self.baseSize(for: style) * factor, relativeTo: style)
+        let size = Self.baseSize(for: style) * Self.fixedScale
+        if psName.isEmpty {
+            var f = Font.system(size: size, design: design)
+            if let w { f = f.weight(w) }
+            return f
+        }
+        var f = Font.custom(psName, size: size * factor)
         if let w { f = f.weight(w) }
         return f
     }

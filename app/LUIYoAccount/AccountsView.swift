@@ -245,13 +245,9 @@ struct AccountsView: View {
                         .appFont(.caption)
                         .foregroundColor(.red)
                 }
-                HStack {
-                    Text("注册 " + u.createdText)
-                    Text("·")
-                    Text("最后登录 " + u.lastLoginText)
-                }
-                .appFont(.caption)
-                .foregroundColor(.secondary)
+                Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
                 if !u.udid.isEmpty {
                     Text("UDID " + u.udid)
                         .appFont(.caption2, design: .monospaced)
