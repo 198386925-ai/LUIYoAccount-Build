@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 底栏选择值（旧 TabView 外壳用）：页面 tab /「更多」伪 tab /「收起」伪 tab / 搜索 tab。
 /// .more / .collapse 永远不会真正被选中——旧外壳的选择绑定 setter 拦截它们（见 handleLegacySelection）
@@ -119,6 +120,21 @@ struct ContentView: View {
     /// 两头和落位帧严丝合缝。只在换组动画期间非 nil，落位后清掉，
     /// 常态高亮（GlideLens）接管
     @State private var lensTravel: (aTab: AppTab, bTab: AppTab)?
+    /// 窗口底安全区的活值（Build 31）：从当前 key window 读回，不写死 34。
+    /// 玻璃外壳的几何换算全用它：底栏用显式坐标钉到物理底边（见 glassShell
+    /// 的底栏层），页面底部留白和搜索胶囊下边距这两个锚停在安全线上的留白，
+    /// 代码值 = 渲染值 − 这个活值（渲染口径见各处注释）
+    @State private var windowBottomInset: CGFloat = 0
+
+    /// 刷新窗口底安全区：key window 优先，没有就退任意 window；
+    /// 根 body 和玻璃外壳出现时各刷一次（登录转场前就已就位）
+    private func refreshWindowBottomInset() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap { $0.windows }
+        if let w = windows.first(where: { $0.isKeyWindow }) ?? windows.first {
+            windowBottomInset = w.safeAreaInsets.bottom
+        }
+    }
 
     var body: some View {
         Group {
@@ -136,9 +152,12 @@ struct ContentView: View {
         // 保证任何环境重算（输入框聚焦等）都不会让全 App 字号跳变
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
-        // 搜索胶囊离底边距离默认按玻璃外壳算（10 + 64 + 10）；旧 TabView 外壳自己改成 93
-        .environment(\.searchBarBottom, 84)
+        // 搜索胶囊的渲染下边距按玻璃外壳算 = 78（栏顶渲染 68 + 10，Build 31）；
+        // 胶囊的锚（GlobalSearchView 的 overlay）停在安全线上，注入的代码值 =
+        // 渲染值 − 窗口底安全区活值；旧 TabView 外壳自己改成 93
+        .environment(\.searchBarBottom, max(78 - windowBottomInset, 0))
         .onAppear {
+            refreshWindowBottomInset()
             FontStore.applyUIKitAppearances()
             // 自动登录：有保存的密码就直接进，不用每次输
             guard !autoDone else { return }
@@ -189,40 +208,59 @@ struct ContentView: View {
 
     /// 五个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（opacity 切显隐），
     /// 各自的导航栈、滚动位置、已加载数据都不丢；搜索以伪页面盖在最上层。
-    /// 底部 safeAreaInset 留出底栏高度，页面内容永远不被浮动底栏挡住；
-    /// 整层沉到物理底边（见 body 上的 ignoresSafeArea），留白是绝对值。
+    /// 底部 safeAreaInset 留出底栏高度，页面内容永远不被浮动底栏挡住。
+    ///
+    /// 底栏定位（Build 31）：28/30 两版把 .ignoresSafeArea(edges: .bottom) 挂在
+    /// 页面 ZStack 上、底栏用 .overlay(alignment: .bottom) 对齐——真机量出来
+    /// 栏的渲染下边距恒 = 窗口底安全区 + 代码下边距（27 版 55 = 34 + 21、
+    /// 30 版 44 = 34 + 10）：页面 ZStack 的帧下边始终停在安全线上，
+    /// ignoresSafeArea 没能把它放下去，overlay 的底部锚也就跟着停在安全线。
+    /// 31 版把底栏拆成独立一层，用 GeometryReader 显式算物理底边的坐标：
+    /// 物理底边 y = 层高 +（窗口底安全区活值 − 这层自己的底安全区）。
+    /// 这层真沉到物理底边时，层高 = 物理屏高、它自己的底安全区 = 窗口安全区，
+    /// 修正量为 0；没沉下去时层高停在安全线、它自己的底安全区 = 0，修正量
+    /// 正好是窗口安全区——两种布局结果下算出的都是同一个物理底边，
+    /// 代码里的下边距 4 就是渲染出来的 4，和设备的安全区大小无关。
+    /// 页面留白和搜索胶囊这两个锚仍停在安全线（页面层原样不动），它们的
+    /// 代码值 = 渲染值 − 窗口底安全区活值：页面留白渲染 98（栏顶渲染
+    /// 68 + 上方间隔 30），搜索胶囊渲染 78（栏顶 + 10，注入处换算）。
     @available(iOS 26.0, *)
     private var glassShell: some View {
         ZStack {
-            ForEach(AppTab.allCases) { tab in
-                if mountedPages.contains(tab) {
-                    pageView(tab)
-                        .opacity(!searchShown && currentPage == tab ? 1 : 0)
-                        .allowsHitTesting(!searchShown && currentPage == tab)
-                        .accessibilityHidden(searchShown || currentPage != tab)
+            // 页面层（Build 30 原样：保活 ZStack + 硬切 + 底部留白）
+            ZStack {
+                ForEach(AppTab.allCases) { tab in
+                    if mountedPages.contains(tab) {
+                        pageView(tab)
+                            .opacity(!searchShown && currentPage == tab ? 1 : 0)
+                            .allowsHitTesting(!searchShown && currentPage == tab)
+                            .accessibilityHidden(searchShown || currentPage != tab)
+                    }
+                }
+                if searchShown {
+                    GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
                 }
             }
-            if searchShown {
-                GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
+            .ignoresSafeArea(edges: .bottom)
+            // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
+            .transaction { $0.animation = nil }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: max(98 - windowBottomInset, 0))
             }
+            // 底栏层：显式几何定位（见上方注释）——胶囊底边离物理底边 4，
+            // 栏占 [4, 68]；这层只有 glassBar 有内容，其余区域不挡页面点按
+            GeometryReader { geo in
+                let physicalBottom = geo.size.height + (windowBottomInset - geo.safeAreaInsets.bottom)
+                glassBar
+                    .frame(width: geo.size.width, height: 64)
+                    .position(x: geo.size.width / 2, y: physicalBottom - 4 - 32)
+            }
+            .ignoresSafeArea(edges: .bottom)
         }
-        // 整层沉到屏幕物理底边（Build 28）：不沉的话，底栏的下边距是
-        // 垫在安全区底线之上量的（下边距 + 安全区 34 = 真机量到浮高 55pt）；沉
-        // 下去之后，底栏下边距、页面底部留白、搜索胶囊下边距全部是从物理
-        // 底边量的绝对值。Build 30 把整栏再下调：下边距 21 → 10（栏占
-        // [10, 74]，页面留白 = 栏顶 74 + 上方间隔 30 = 104，搜索胶囊
-        // 下边距 = 栏顶 74 + 10 = 84）
-        .ignoresSafeArea(edges: .bottom)
-        // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
-        .transaction { $0.animation = nil }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 104)
+        .onAppear {
+            refreshWindowBottomInset()
+            normalizeGlassOnAppear()
         }
-        .overlay(alignment: .bottom) {
-            glassBar
-                .padding(.bottom, 10)
-        }
-        .onAppear { normalizeGlassOnAppear() }
         .onChange(of: currentPage) { mountedPages.insert($0) }
     }
 
@@ -392,7 +430,9 @@ struct ContentView: View {
     /// 搜索圆钮直径、槽位项高全是它（代码常量和用户截图上量到的渲染高度
     /// 都是 64、上下边对齐）；选中胶囊高 52、圆钮高亮 60 是在 64 里留的
     /// 边距（上下各 6 / 各 2），不是第二个尺寸。栏的纵向位置是绝对值：
-    /// 外壳整层沉到物理底边，胶囊底边离物理底边 10（栏占 [10, 74]）。
+    /// 本体高 64，由 glassShell 的底栏层显式定位：胶囊底边离物理底边 4
+    /// （栏占 [4, 68]，Build 31——贴底停靠，和 GitHub 那种原生栏一样沉进
+    /// 主屏幕指示条区，指示条压在胶囊下部玻璃上）。
     /// 换组时随进度插值的是胶囊玻璃的位置/宽度、出处字形的滑行和选中胶囊
     /// 的行程；其余槽位项各自永远用本组的静止帧，只淡入淡出、绝不横移；
     /// A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，永不叠压。
