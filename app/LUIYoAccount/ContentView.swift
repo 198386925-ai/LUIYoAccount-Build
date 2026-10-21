@@ -35,6 +35,8 @@ struct ContentView: View {
     @StateObject private var settingsNav = SettingsNavRouter()
     @State private var autoDone = false
     @State private var selection: ShellTab = .page(.accounts)
+    /// 进搜索前所在的 tab：搜索页那颗独立 ✕ 关掉时回到这里
+    @State private var previousTab: ShellTab = .page(.accounts)
 
     var body: some View {
         Group {
@@ -53,9 +55,15 @@ struct ContentView: View {
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
         .environmentObject(settingsNav)
-        // 搜索胶囊离页面底边：原生底栏（含主屏幕指示条区）约 83 + 间隙 10 = 93，
-        // 胶囊正好浮在底栏顶边上方约 10pt（旧降级壳同口径，见 SearchBarCapsule 注释）
-        .environment(\.searchBarBottom, 93)
+        .onChange(of: selection) { newValue in
+            // 只记非搜索 tab：✕ 关闭搜索时的回落点永远是真实页面
+            if newValue != .search { previousTab = newValue }
+        }
+        // 搜索胶囊下边距（Build 36 实测校准）：胶囊 overlay 的底锚停在
+        // 底栏安全线（离物理底边约 83），渲染位置 = 83 + 这个值；底栏顶边
+        // 在离底边约 110 处——27 让胶囊贴在底栏上方、留约 7pt 缝（旧值 93
+        // 按「锚在物理底边」估，渲染缝隙约 73，用户嫌远）
+        .environment(\.searchBarBottom, 27)
         .onAppear {
             FontStore.applyUIKitAppearances()
             // 自动登录：有保存的密码就直接进，不用每次输
@@ -94,7 +102,7 @@ struct ContentView: View {
         }
     }
 
-    /// 标签项的标签：账号 / 生成卡密用用户的模板图（系统着色同 SF 符号），其余用 SF 符号
+    /// 标签项的标签：四个标签页全用用户模板图（TabIcon* 资产，系统着色同 SF 符号）
     @ViewBuilder
     private func tabLabel(_ tab: AppTab) -> some View {
         if let asset = tab.customIconAsset {
@@ -117,7 +125,8 @@ struct ContentView: View {
                 }
             }
             Tab("搜索", image: "TabIconSearch", value: ShellTab.search, role: .search) {
-                GlobalSearchView(onSelect: { navigateFromSearch($0) })
+                GlobalSearchView(onSelect: { navigateFromSearch($0) },
+                                 onClose: { selection = previousTab })
             }
         }
     }
@@ -131,7 +140,8 @@ struct ContentView: View {
                     .tabItem { tabLabel(tab) }
                     .tag(ShellTab.page(tab))
             }
-            GlobalSearchView(onSelect: { navigateFromSearch($0) })
+            GlobalSearchView(onSelect: { navigateFromSearch($0) },
+                             onClose: { selection = previousTab })
                 .tabItem { Label { Text("搜索") } icon: { Image("TabIconSearch") } }
                 .tag(ShellTab.search)
         }

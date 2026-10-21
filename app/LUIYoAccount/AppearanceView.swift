@@ -6,6 +6,9 @@ struct AppearanceView: View {
     @EnvironmentObject var tabOrder: TabOrderStore
     @State private var showFontPicker = false
     @State private var fontError: String?
+    /// 重命名目标 + 输入框（Build 36）：改的只是显示名覆盖，字体文件不动
+    @State private var renameTarget: ImportedFont?
+    @State private var renameText = ""
     @State private var editMode: EditMode = .inactive
 
     var body: some View {
@@ -29,7 +32,7 @@ struct AppearanceView: View {
                         fontStore.select(f.psName)
                     } label: {
                         HStack {
-                            Text(f.displayName)
+                            Text(fontStore.displayName(for: f))
                                 .font(Font.custom(f.psName, size: 17 * FontStore.computeFactor(psName: f.psName)))
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
@@ -40,9 +43,13 @@ struct AppearanceView: View {
                             }
                         }
                     }
-                }
-                .onDelete { idx in
-                    for i in idx { fontStore.delete(fontStore.fonts[i]) }
+                    .swipeActions(edge: .trailing) {
+                        Button("删除", role: .destructive) { fontStore.delete(f) }
+                        Button("重命名") {
+                            renameText = fontStore.displayName(for: f)
+                            renameTarget = f
+                        }
+                    }
                 }
                 Button {
                     showFontPicker = true
@@ -52,9 +59,6 @@ struct AppearanceView: View {
                         Text("导入字体（ttf / otf / ttc）")
                     }
                 }
-                Text("选中后立即全局生效，标题和正文都会换成该字体；少数系统控件可能仍用系统字体。导入的字体向左滑可删除，存本机、重启也在。")
-                    .appFont(.footnote)
-                    .foregroundColor(.secondary)
             } header: {
                 AppSectionHeader("全局字体")
             }
@@ -82,11 +86,6 @@ struct AppearanceView: View {
             } header: {
                 AppSectionHeader("底栏排序")
             }
-            Section {
-                Text("底栏就这四个标签；点右上角编辑后拖动排序，底栏立即更新。邮件和应用更新在设置页里，不占底栏。")
-                    .appFont(.footnote)
-                    .foregroundColor(.secondary)
-            }
         }
         .compactSectionSpacing()
         .navigationTitle("外观")
@@ -111,5 +110,17 @@ struct AppearanceView: View {
         .alert("导入失败", isPresented: .constant(fontError != nil)) {
             Button("好") { fontError = nil }
         } message: { Text(fontError ?? "") }
+        .alert("重命名", isPresented: .constant(renameTarget != nil)) {
+            TextField("字体名字", text: $renameText)
+            Button("取消", role: .cancel) { renameTarget = nil }
+            Button("保存") {
+                if let t = renameTarget {
+                    fontStore.rename(psName: t.psName, to: renameText)
+                }
+                renameTarget = nil
+            }
+        } message: {
+            Text("只改显示的名字，字体文件不变；把名字清掉保存 = 恢复原名")
+        }
     }
 }

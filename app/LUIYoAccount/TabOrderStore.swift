@@ -38,6 +38,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .accounts: return "TabIconAccount"
         case .cards: return "TabIconCard"
         case .versions: return "TabIconVersions"
+        case .settings: return "TabIconSettings"
         default: return nil
         }
     }

@@ -8,8 +8,8 @@ struct GlobalSearchView: View {
     /// 搜索胶囊离页面底边的距离（外壳注入）：打开搜索时胶囊浮在底栏上方、不和底栏重叠
     @Environment(\.searchBarBottom) private var searchBarBottom
     let onSelect: (AppTab) -> Void
-    /// 关闭回调（原生 TabView 外壳里搜索本身就是一个 tab，不需要关闭按钮，传 nil）；
-    /// 保留这个口子是为了不改调用点签名
+    /// 关闭回调（Build 36）：胶囊右边那颗独立 ✕ 点了触发——先清关键词，
+    /// 再由外壳切回进搜索前的 tab；两个壳都传
     var onClose: (() -> Void)? = nil
 
     @State private var query = ""
@@ -45,10 +45,6 @@ struct GlobalSearchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
-                        if q.isEmpty {
-                            Text("输入关键词，搜账号邮箱、卡密、邮件记录")
-                                .foregroundColor(.secondary)
-                        }
                         if noHits {
                             Text("无结果")
                                 .foregroundColor(.secondary)
@@ -119,26 +115,36 @@ struct GlobalSearchView: View {
                     }
                 }
             }
-            // 结果列表底部留空带，末尾结果不被搜索胶囊盖住
+            // 结果列表底部留空带：胶囊在列表区内占的高度 = 下边距 27 + 高 40
+            // ≈ 67，留 74 让末尾结果不被胶囊 + ✕ 那一行盖住
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: 56)
+                Color.clear.frame(height: 74)
             }
             .navigationTitle("全局搜索")
-            .toolbar {
-                if let onClose {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("关闭") { onClose() }
-                    }
-                }
-            }
             // 搜索胶囊是页面自己的子视图（不再用 .searchable——系统搜索框在窗口层贴底
             // 渲染、会和底栏重叠，见 SearchBarCapsule 注释）；本页是搜索 tab 的内容，
-            // 只在搜索 tab 打开时存在，胶囊随页面一起出现/消失，下边距由外壳注入，
-            // 钉在底栏顶边上方 10pt：底栏在下方照常可见，两者零重叠、零透字
+            // 只在搜索 tab 打开时存在，胶囊随页面一起出现/消失。Build 36：整页
+            // 只剩这一个输入框（顶部那行白卡片同款提示行已删）；下边距由外壳
+            // 注入并校准到贴底栏上方约 7pt；胶囊右边一颗独立 ✕——自己一颗
+            // 40pt 圆玻璃钮、不在胶囊里面，点了清词并回进搜索前的 tab
             .overlay(alignment: .bottom) {
-                SearchBarCapsule(query: $query, prompt: "搜索账号 / 卡密 / 邮件")
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, searchBarBottom)
+                HStack(alignment: .center, spacing: 8) {
+                    SearchBarCapsule(query: $query, prompt: "搜索账号 / 卡密 / 邮件")
+                    Button {
+                        query = ""
+                        onClose?()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .frame(width: 40, height: 40)
+                            .modifier(SearchCapsuleSurface())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, searchBarBottom)
             }
             .task { await loadIfNeeded() }
         }

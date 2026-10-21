@@ -3,8 +3,9 @@ import SwiftUI
 /// 版本管理（Build 32 从「应用更新」页拆出来，单独一个底栏页）：
 /// 版本列表，一条版本一张可收起的卡（Build 35）：收起时只显示标题行
 /// （版本号 · Build + 右侧状态胶囊，只显示、不加箭头），点标题行展开——
-/// 展开后是三行输入框直接改弹窗文案（一级标题 / 二级文案 / 三级文案，
-/// 和之前完全一样，不删不移），保存按钮写回（version_set 只带文案、
+/// 展开后是三行输入框直接改弹窗文案（提示 / 标题 / 原因——Build 36
+/// 改的只是输入框标签，后台字段 title/l2/l3 不变；输入框和之前完全
+/// 一样，不删不移），保存按钮写回（version_set 只带文案、
 /// 不带状态，后端保持当前状态）；保存下面另起一张独立卡放发布信息
 /// （发布于 / 本次更新——Build 33 时在卡顶的信息块，Build 35 按用户
 /// 要求挪到保存下面的独立卡里）。状态不在卡里改：对着标题行左滑出
@@ -101,6 +102,11 @@ private struct VersionEditCard: View {
     }
     private var hasInfo: Bool { publishedLine != nil || notesLine != nil }
 
+    /// 有没有没保存的改动（拿输入框现值和服务器现值比）：保存按钮亮/灰看它
+    private var dirty: Bool {
+        title != entry.title || l2 != entry.l2 || l3 != entry.l3
+    }
+
     var body: some View {
         Group {
             Section {
@@ -134,10 +140,14 @@ private struct VersionEditCard: View {
                     }
                 }
                 if expanded {
-                    fieldRow("一级标题", placeholder: "弹窗标题", text: $title)
-                    fieldRow("二级文案", placeholder: "第二行文案", text: $l2)
-                    fieldRow("三级文案", placeholder: "第三行文案", text: $l3)
-                    HStack {
+                    fieldRow("提示", placeholder: "弹窗标题", text: $title)
+                    fieldRow("标题", placeholder: "第二行文案", text: $l2)
+                    fieldRow("原因", placeholder: "第三行文案", text: $l3)
+                    // 保存按钮 = 账号页封禁按钮同款（Build 36）：整宽胶囊
+                    // 按钮（.borderedProminent）；有未保存改动时亮起，没改动 /
+                    // 已保存时置灰不可点（disabled 的系统灰，同封禁按钮口径）。
+                    // 已保存 / 报错反馈移到按钮下方一行（行为沿用之前）
+                    VStack(spacing: 6) {
                         Button {
                             Task { await save() }
                         } label: {
@@ -145,9 +155,12 @@ private struct VersionEditCard: View {
                                 Text("保存")
                                 if saving { ProgressView() }
                             }
+                            .appFont(.body, weight: .semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 2)
                         }
-                        .disabled(saving)
-                        Spacer()
+                        .buttonStyle(.borderedProminent)
+                        .disabled(saving || !dirty)
                         if saved {
                             Text("已保存")
                                 .appFont(.caption)
@@ -159,7 +172,6 @@ private struct VersionEditCard: View {
                                 .lineLimit(1)
                         }
                     }
-                    .frame(minHeight: 32)
                     .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                 }
             }
@@ -183,6 +195,10 @@ private struct VersionEditCard: View {
                 }
             }
         }
+        // 改了任何一格，「已保存」标记立刻撤下（按钮随 dirty 重新亮起）
+        .onChange(of: title) { _ in saved = false }
+        .onChange(of: l2) { _ in saved = false }
+        .onChange(of: l3) { _ in saved = false }
     }
 
     /// 状态胶囊（只显示、不可点）：老列表行同款——弹更新橙、禁用红、正常灰

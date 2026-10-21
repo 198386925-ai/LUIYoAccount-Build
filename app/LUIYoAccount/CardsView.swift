@@ -52,16 +52,21 @@ struct CardsView: View {
                             .frame(width: 180)
                     }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    // 生成按钮 = 账号页封禁按钮同款（Build 36）：整宽胶囊按钮
                     Button {
                         Task { await generate() }
                     } label: {
-                        HStack {
+                        HStack(spacing: 6) {
                             Text("生成")
                             if generating { ProgressView() }
                         }
+                        .appFont(.body, weight: .semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 2)
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(generating)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                 } header: {
                     AppSectionHeader("生成卡密")
                 }

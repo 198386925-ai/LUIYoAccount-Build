@@ -18,8 +18,12 @@ struct ImportedFont: Identifiable, Equatable {
 final class FontStore: ObservableObject {
     static let shared = FontStore()
     static let defaultsKey = "globalFontPS"
+    /// 显示名覆盖（Build 36 重命名）：psName -> 用户改的名字，只改显示、文件不动
+    static let nameOverridesKey = "fontNameOverrides"
 
     @Published private(set) var fonts: [ImportedFont] = []
+    /// 显示名覆盖表（重命名存这里，key = psName；删字体时一并清掉它的覆盖）
+    @Published private(set) var nameOverrides: [String: String] = [:]
     /// 当前选中的字体 PostScript 名（空 = 系统默认），改了立刻全 App 重渲染
     @Published private(set) var psName: String = ""
     /// 适配系数：自定义字体的字面通常比系统字体大，按 capHeight 比例把字号压回正常观感
@@ -35,6 +39,7 @@ final class FontStore: ObservableObject {
     static let fixedScale: CGFloat = 0.9
 
     private init() {
+        nameOverrides = UserDefaults.standard.dictionary(forKey: Self.nameOverridesKey) as? [String: String] ?? [:]
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
         psName = saved
         factor = Self.computeFactor(psName: saved)
@@ -62,6 +67,23 @@ final class FontStore: ObservableObject {
         factor = Self.computeFactor(psName: name)
         trackingCompensation = Self.computeTrackingCompensation(psName: name)
         Self.applyUIKitAppearances()
+    }
+
+    /// 实际显示名：有重命名覆盖就用覆盖，否则用字体自带名
+    func displayName(for font: ImportedFont) -> String {
+        nameOverrides[font.psName] ?? font.displayName
+    }
+
+    /// 重命名（Build 36）：只存显示名覆盖（UserDefaults 按 psName 存），
+    /// 字体文件 / PostScript 名都不动；名字清空 = 删覆盖、恢复原名
+    func rename(psName: String, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            nameOverrides.removeValue(forKey: psName)
+        } else {
+            nameOverrides[psName] = trimmed
+        }
+        UserDefaults.standard.set(nameOverrides, forKey: Self.nameOverridesKey)
     }
 
     /// 适配系数 = 系统字体 capHeight / 自定义字体 capHeight（同为 17pt 时测），夹在 [0.6, 1.05]
@@ -224,7 +246,7 @@ final class FontStore: ObservableObject {
                                         fileURL: url))
             }
         }
-        fonts = out.sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending }
+        fonts = out.sorted { displayName(for: $0).localizedCompare(displayName(for: $1)) == .orderedAscending }
     }
 
     enum FontStoreError: LocalizedError {
@@ -249,6 +271,9 @@ final class FontStore: ObservableObject {
 
     func delete(_ font: ImportedFont) {
         try? FileManager.default.removeItem(at: font.fileURL)
+        if nameOverrides.removeValue(forKey: font.psName) != nil {
+            UserDefaults.standard.set(nameOverrides, forKey: Self.nameOverridesKey)
+        }
         if psName == font.psName { select("") }
         refresh()
     }

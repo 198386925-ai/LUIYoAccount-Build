@@ -3,11 +3,13 @@ import SwiftUI
 /// 设置：外观入口（全局字体 + 底栏排序在里面）/ 邮件、应用更新入口
 /// （Build 34 从底栏搬入，就在外观下面，和外观同一个导航栈推送打开；
 /// 邮件 / 应用更新两行带 selection 绑定，全局搜索点中它们时外壳经
-/// SettingsNavRouter 置位，这里接住自动推页）/ 服务器信息 / 本机版本 / 退出登录
+/// SettingsNavRouter 置位，这里接住自动推页）/ 服务器（Build 36：
+/// 一张卡——卡内首行「服务器」整行就是开关，点它收起/展开卡内三行）/
+/// 本机版本 / 退出登录
 struct SettingsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var settingsNav: SettingsNavRouter
-    /// 服务器组收起/展开（Build 35）：标题「服务器」可点切换，默认展开
+    /// 服务器卡收起/展开（Build 36）：卡内首行「服务器」整行可点切换，默认展开
     @State private var serverExpanded = true
 
     private var versionText: String {
@@ -38,21 +40,25 @@ struct SettingsView: View {
                     }
                 }
                 Section {
+                    // 卡内首行「服务器」= 开关本身（Build 36）：整行可点、整行
+                    // 都是热区，点它收起/展开同卡下面三行（地址 / 账号接口 /
+                    // 更新源）；卡外不再另挂标题，不加箭头
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { serverExpanded.toggle() }
+                    } label: {
+                        HStack {
+                            Text("服务器")
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     if serverExpanded {
                         LabeledContent("地址", value: "luioe.bbroot.com")
                         LabeledContent("账号接口", value: "user-auth-v2.php")
                         LabeledContent("更新源", value: "updates/latest.json")
                     }
-                } header: {
-                    // 标题可点：收起/展开下面三行（标题文字不变、不加箭头，同组卡片口径）
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { serverExpanded.toggle() }
-                    } label: {
-                        AppSectionHeader("服务器")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
                 }
                 Section {
                     LabeledContent("版本", value: versionText)

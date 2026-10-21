@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// 搜索胶囊离页面底边的距离，由外壳注入：
-/// 系统原生底栏（含主屏幕指示条区）约 83 + 间隙 10 = 93，
-/// 胶囊底边正好落在底栏顶边上方 10pt，永远浮在底栏上方、和底栏零重叠
+/// 搜索胶囊的下边距（overlay 底锚 → 胶囊底边），由外壳注入：
+/// 底锚停在底栏安全线（离物理底边约 83），底栏顶边在离底边约 110 处——
+/// Build 36 实测校准：27 让胶囊底边落在底栏顶边上方约 7pt，贴着、不重叠
+/// （旧值 93 按「锚在物理底边」估，渲染缝隙约 73pt，用户嫌远）
 private struct SearchBarBottomKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 93
+    static let defaultValue: CGFloat = 27
 }
 
 extension EnvironmentValues {
@@ -50,7 +51,7 @@ struct SearchBarCapsule: View {
 
 /// 胶囊表面：iOS 26 用系统液态玻璃（和底栏同一种玻璃），旧系统退系统材质 + 轻影；
 /// 形状用 Capsule（高 40 时圆角正好 20）
-private struct SearchCapsuleSurface: ViewModifier {
+struct SearchCapsuleSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
