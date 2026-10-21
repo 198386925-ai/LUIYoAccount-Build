@@ -248,7 +248,7 @@ struct AppFontModifier: ViewModifier {
     let design: Font.Design
     func body(content: Content) -> some View {
         content
-            .appFont(style, weight: weight, design: design)
+            .font(fontStore.font(style, weight: weight, design: design))
             .tracking(fontStore.scaledTracking(for: style))
     }
 }
@@ -260,7 +260,7 @@ struct AppSizedFontModifier: ViewModifier {
     let weight: Font.Weight?
     func body(content: Content) -> some View {
         content
-            .appFont(size: size, weight: weight)
+            .font(fontStore.font(size: size, weight: weight))
             .tracking(fontStore.scaledTracking(forSize: size))
     }
 }
