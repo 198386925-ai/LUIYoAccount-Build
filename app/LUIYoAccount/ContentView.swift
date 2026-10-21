@@ -68,6 +68,8 @@ struct ContentView: View {
         // 保证任何环境重算（输入框聚焦等）都不会让全 App 字号跳变
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
+        // 搜索胶囊离底边距离默认按玻璃外壳算（6 + 56 + 10）；旧 TabView 外壳自己改成 93
+        .environment(\.searchBarBottom, 72)
         .onAppear {
             FontStore.applyUIKitAppearances()
             // 自动登录：有保存的密码就直接进，不用每次输
@@ -470,6 +472,8 @@ struct ContentView: View {
                 .tabItem { Image(systemName: "magnifyingglass") }
                 .tag(ShellTab.search)
         }
+        // 旧外壳的系统底栏更高：搜索胶囊离底边按「底栏约 83 + 间隙 10」浮在它上方
+        .environment(\.searchBarBottom, 93)
     }
 
     /// 全局搜索点中结果（旧外壳）：五个页都在底栏里，直接切到对应 tab

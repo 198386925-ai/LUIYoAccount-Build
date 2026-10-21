@@ -5,6 +5,8 @@ import SwiftUI
 /// 「更多」里的页由外壳切到更多 tab 并打开）
 struct GlobalSearchView: View {
     @EnvironmentObject var api: AccountAPI
+    /// 搜索胶囊离页面底边的距离（外壳注入）：打开搜索时胶囊浮在底栏上方、不和底栏重叠
+    @Environment(\.searchBarBottom) private var searchBarBottom
     let onSelect: (AppTab) -> Void
     /// 关闭回调（玻璃外壳里搜索是盖在页面上的伪页面，需要返回入口）；
     /// 旧 TabView 外壳里搜索本身就是一个 tab，传 nil 就不显示关闭按钮
@@ -117,6 +119,10 @@ struct GlobalSearchView: View {
                     }
                 }
             }
+            // 结果列表底部留空带，末尾结果不被搜索胶囊盖住
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 56)
+            }
             .navigationTitle("全局搜索")
             .toolbar {
                 if let onClose {
@@ -125,7 +131,15 @@ struct GlobalSearchView: View {
                     }
                 }
             }
-            .searchable(text: $query, prompt: "搜索账号 / 卡密 / 邮件")
+            // 搜索胶囊是页面自己的子视图（不再用 .searchable——系统搜索框在窗口层贴底
+            // 渲染、会和玻璃底栏重叠，见 SearchBarCapsule 注释）；本页在外壳里是条件组合
+            // （关搜索时整页不在层级中），胶囊随页面一起出现/消失，下边距由外壳注入，
+            // 钉在底栏顶边上方 10pt：底栏在下方照常可见，两者零重叠、零透字
+            .overlay(alignment: .bottom) {
+                SearchBarCapsule(query: $query, prompt: "搜索账号 / 卡密 / 邮件")
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, searchBarBottom)
+            }
             .task { await loadIfNeeded() }
         }
     }

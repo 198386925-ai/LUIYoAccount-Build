@@ -7,6 +7,8 @@ import UIKit
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
+    /// 搜索胶囊离页面底边的距离（外壳注入）：胶囊浮在底栏上方、不和底栏重叠
+    @Environment(\.searchBarBottom) private var searchBarBottom
     @State private var list: [AccountUser] = []
     @State private var loading = false
     @State private var error: String?
@@ -119,10 +121,21 @@ struct AccountsView: View {
                     }
                     .compactSectionSpacing()
                     .refreshable { await reload() }
+                    // 列表底部再留一条空带，末尾卡片滚到底也不被搜索胶囊盖住
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Color.clear.frame(height: 56)
+                    }
                 }
             }
             .navigationTitle("账号管理")
-            .searchable(text: $query, prompt: "搜索邮箱")
+            // 搜索胶囊是页面自己的子视图（不再用 .searchable——它的系统搜索框在窗口层
+            // 贴底渲染，会和玻璃底栏重叠，见 SearchBarCapsule 注释）；显隐跟页面走，
+            // 位置由外壳注入的 searchBarBottom 钉在底栏上方 10pt
+            .overlay(alignment: .bottom) {
+                SearchBarCapsule(query: $query, prompt: "搜索邮箱")
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, searchBarBottom)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("退出") { api.logout() }
