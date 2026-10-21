@@ -18,7 +18,10 @@ import SwiftUI
 struct VersionsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    @State private var versions: [VersionEntry] = []
+    /// 版本列表直接读 App 级缓存（Build 38）：version_set / version_delete
+    /// 的回传列表由 API 直接写进缓存，本页自动刷新、不再多拉一次；
+    /// 只有右上「刷新」才回源
+    private var versions: [VersionEntry] { api.versionsCache ?? [] }
     @State private var loaded = false
     @State private var errorText: String?
     /// 批量删除（Build 37）：编辑模式 + 已选 build 集（版本以 build 为键，
@@ -41,7 +44,7 @@ struct VersionsView: View {
                     VersionEditCard(entry: v,
                                     editing: editing,
                                     selected: selectedBuilds.contains(v.build),
-                                    onSaved: { newList in versions = newList },
+                                    onSaved: { _ in /* Build 38：回传列表已由 API 写进缓存 */ },
                                     onToggleSelect: {
                                         if selectedBuilds.contains(v.build) {
                                             selectedBuilds.remove(v.build)
@@ -63,7 +66,7 @@ struct VersionsView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("刷新") { Task { await load() } }
+                    Button("刷新") { Task { await load(force: true) } }
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -107,11 +110,10 @@ struct VersionsView: View {
         deleting = true
         defer { deleting = false }
         do {
-            var latest = versions
+            // 回传的最新列表已由 API 写进缓存（以最后一次删除的为准）
             for b in selectedBuilds.sorted() {
-                latest = try await api.versionDelete(build: b)
+                _ = try await api.versionDelete(build: b)
             }
-            versions = latest
             selectedBuilds.removeAll()
             editing = false
         } catch {
@@ -121,10 +123,10 @@ struct VersionsView: View {
         }
     }
 
-    private func load() async {
+    private func load(force: Bool = false) async {
         // 后端没升级时报错提示，列表保持空
         do {
-            versions = try await api.versionsList()
+            _ = try await api.versionsList(force: force)
             loaded = true
         } catch {
             loaded = true

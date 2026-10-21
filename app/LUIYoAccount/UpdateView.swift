@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    @State private var latest: LatestRelease?
+    /// 线上版本直接读 App 级缓存（Build 38）：会话内只拉一次 latest.json，
+    /// 再进本页不重拉；只有右上「刷新」和上传成功后才回源
+    private var latest: LatestRelease? { api.latestCache }
     @State private var latestLoaded = false
     @State private var showPicker = false
     @State private var pickedURL: URL?
@@ -89,7 +91,8 @@ struct UpdateView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 // Build 37：刷新改到右上角胶囊按钮（和版本管理页同款），
                 // 卡内的蓝色文字按钮已删
-                Button("刷新") { Task { await loadLatest() } }
+                // Build 38：本页对 latest.json 的唯一回源入口（连同上传后）
+                Button("刷新") { Task { await loadLatest(force: true) } }
             }
         }
         .sheet(isPresented: $showPicker) {
@@ -107,8 +110,8 @@ struct UpdateView: View {
         return String(format: "%.1f MB", Double(n) / 1024 / 1024)
     }
 
-    private func loadLatest() async {
-        latest = await api.fetchLatest()
+    private func loadLatest(force: Bool = false) async {
+        _ = await api.fetchLatest(force: force)
         latestLoaded = true
     }
 
@@ -144,7 +147,8 @@ struct UpdateView: View {
             let r = try await api.uploadIPA(fileURL: url, version: version, build: build, notes: notes)
             resultOK = true
             resultMsg = "✅ 已发布：\(r.name ?? "")"
-            await loadLatest()
+            // 刚发布了新版本：线上状态已变，回源刷新这一份
+            await loadLatest(force: true)
         } catch {
             if !error.isCancelError {
                 resultOK = false

@@ -5,7 +5,11 @@ import UIKit
 struct CardsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    @State private var cards: [CardItem] = []
+    /// 卡密列表直接读 App 级缓存（Build 38）：这份表没有行数上限、是最重
+    /// 的一份——会话内只拉一次；作废 / 删除由 API 就地改缓存行，不再
+    /// 每次操作都整表重拉；只有右上「刷新」才回源（生成后例外：接口只回
+    /// 卡号拼不出整行，API 已把缓存置失效，load 只重拉这一份）
+    private var cards: [CardItem] { api.cardsCache ?? [] }
     @State private var countText = "10"
     @State private var daysValue = "30"
     @State private var cardFilter: CardFilter = .all
@@ -47,7 +51,7 @@ struct CardsView: View {
                     HStack {
                         Text("备注")
                         Spacer()
-                        TextField("客户名/用途，可空", text: $remarkText)
+                        TextField("用户名/用途…", text: $remarkText)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 180)
                     }
@@ -139,7 +143,8 @@ struct CardsView: View {
             .navigationTitle("生成卡密")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("刷新") { Task { await load() } }
+                    // Build 38：本页唯一的整表回源入口
+                    Button("刷新") { Task { await load(force: true) } }
                 }
             }
             .task { await load() }
@@ -297,10 +302,12 @@ struct CardsView: View {
     }
 
     private func deleteAllUnused() async {
+        // 先拍快照再逐张删：删除会就地改缓存，边遍历边改会跳行
+        let targets = unusedCards
         do {
-            for c in unusedCards { try await api.cardDelete(id: c.id) }
+            for c in targets { try await api.cardDelete(id: c.id) }
             notice = "已删除全部未使用卡密"
-            await load()
+            // Build 38：缓存已被逐张就地删净，不再整表重拉
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
@@ -316,7 +323,7 @@ struct CardsView: View {
             }
             newCodes = remaining
             notice = "已删除这批卡密"
-            await load()
+            // Build 38：同上，缓存已就地同步
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
@@ -326,7 +333,7 @@ struct CardsView: View {
         do {
             try await api.cardDelete(id: card.id)
             notice = "已删除"
-            await load()
+            // Build 38：缓存已就地同步，不再整表重拉
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
@@ -349,9 +356,9 @@ struct CardsView: View {
         "\(card.daysText) · 生成于 \(card.createdText)"
     }
 
-    private func load() async {
+    private func load(force: Bool = false) async {
         do {
-            cards = try await api.cards()
+            _ = try await api.cards(force: force)
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
@@ -366,6 +373,7 @@ struct CardsView: View {
             let codes = try await api.genCards(count: count, days: days, remark: remarkText.trimmingCharacters(in: .whitespaces))
             newCodes = codes
             notice = "已生成 \(codes.count) 张（每张 \(days >= 36500 ? "永久" : "\(days) 天")）"
+            // 生成接口只回卡号：API 已把卡密缓存置失效，这次 load 只重拉卡密这一份
             await load()
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
@@ -375,7 +383,7 @@ struct CardsView: View {
     private func toggle(_ card: CardItem) async {
         do {
             try await api.cardDisable(id: card.id, disabled: !card.disabled)
-            await load()
+            // Build 38：作废状态已就地写进缓存行，不再整表重拉
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }

@@ -4,7 +4,10 @@
 // 流程：注册邮箱 → 设密码 → 邮箱验证码 → 登录 → 绑卡密 → SVIP
 // 规则：一号一设备（新登录挤掉旧设备）；换设备 24h 冷静期
 // 安全：1 登录锁定（连错5次锁15分钟）
-//       2 新设备登录需点邮箱确认链接
+//       2 滑块人机验证（发码/注册/登录/重置密码均需 proof；新设备
+//          登录验证后直接切换设备，不再发邮箱确认信；后台记录
+//          新设备登录的时间 / IP / 省市供提醒；每次验证通过按账号
+//          记入 captcha_log，后台账号列表显示「今日验证 X 次」）
 //       3 IP 异常标红（1小时内两个不同 IP → 后台标红人工审核）
 //       5 越狱检测按账号单独开关（默认禁止，后台可放行）
 // 依赖：PHP 7.4+ / SQLite PDO
@@ -105,6 +108,9 @@ foreach ([
     'udid'           => "ALTER TABLE users ADD COLUMN udid TEXT DEFAULT ''",
     'ban_title'      => "ALTER TABLE users ADD COLUMN ban_title TEXT DEFAULT ''",
     'ban_subtitle'   => "ALTER TABLE users ADD COLUMN ban_subtitle TEXT DEFAULT ''",
+    'last_new_device_at' => "ALTER TABLE users ADD COLUMN last_new_device_at INTEGER DEFAULT 0",
+    'last_login_ip'      => "ALTER TABLE users ADD COLUMN last_login_ip TEXT DEFAULT ''",
+    'last_login_region'  => "ALTER TABLE users ADD COLUMN last_login_region TEXT DEFAULT ''",
 ] as $c => $sql) if (!in_array($c, $cols)) $db->exec($sql);
 $db->exec("CREATE TABLE IF NOT EXISTS udid_enroll (
     token TEXT PRIMARY KEY,
@@ -120,6 +126,31 @@ $db->exec("CREATE TABLE IF NOT EXISTS mail_log (
     ok INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT 0
 )");
+// 滑块验证：挑战（一次性，120 秒过期）+ 通过凭证（绑定设备，10 分钟内复用）
+$db->exec("CREATE TABLE IF NOT EXISTS captcha_challenges (
+    cid TEXT PRIMARY KEY,
+    target INTEGER NOT NULL,
+    device_id TEXT DEFAULT '',
+    expires_at INTEGER NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL
+)");
+$db->exec("CREATE TABLE IF NOT EXISTS captcha_proofs (
+    proof TEXT PRIMARY KEY,
+    device_id TEXT DEFAULT '',
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+)");
+// 验证消费流水（Build 38）：受保护接口每通过一次滑块验证记一行，
+// 后台 admin_list 按「今天」聚合出每账号的今日验证次数
+$db->exec("CREATE TABLE IF NOT EXISTS captcha_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT DEFAULT '',
+    device_id TEXT DEFAULT '',
+    action TEXT DEFAULT '',
+    created_at INTEGER NOT NULL
+)");
+$db->exec("CREATE INDEX IF NOT EXISTS idx_captcha_log ON captcha_log(email, created_at)");
 
 // ---------- 工具 ----------
 function resp($ok, $data = []) { echo json_encode(array_merge(['ok' => $ok], $data), JSON_UNESCAPED_UNICODE); exit; }
@@ -131,6 +162,58 @@ function client_ip() {
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) return explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
     return $_SERVER['REMOTE_ADDR'] ?? '';
 }
+// ---------- 滑块验证 ----------
+// 校验请求里带的 proof：存在、未过期、且与请求设备一致（有效期内可复用）
+function captcha_proof_ok($in) {
+    global $db;
+    $proof = trim((string)($in['captcha_proof'] ?? ''));
+    $device = trim((string)($in['device_id'] ?? ''));
+    if ($proof === '' || $device === '') return false;
+    $st = $db->prepare("SELECT * FROM captcha_proofs WHERE proof=?");
+    $st->execute([$proof]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return false;
+    if ((int)$row['expires_at'] < time()) return false;
+    if ($row['device_id'] !== '' && $row['device_id'] !== $device) return false;
+    return true;
+}
+// 受保护接口的统一门：没有有效 proof 直接挡下（App 收到 code 后弹滑块）
+function require_captcha($in) {
+    if (!captcha_proof_ok($in)) resp(false, ['error' => '需要完成滑块验证', 'code' => 'captcha_required']);
+}
+// 验证消费记账（Build 38）：四个受保护接口在 require_captcha 通过后
+// 各调一次，把这次验证记入 captcha_log（账号 + 设备 + 动作 + 时间）；
+// 记账失败只吞掉异常，绝不挡业务
+function captcha_log_use($in, $action) {
+    global $db;
+    try {
+        $db->prepare("INSERT INTO captcha_log (email, device_id, action, created_at) VALUES (?,?,?,?)")
+           ->execute([strtolower(trim((string)($in['email'] ?? ''))),
+                      trim((string)($in['device_id'] ?? '')), $action, time()]);
+    } catch (Throwable $e) { /* 记账失败不影响主流程 */ }
+}
+// IP 归属地（省+市）：太平洋电脑网接口（GBK 返回，转 UTF-8）；
+// 任何失败都返回 '未知'，不影响登录主流程
+function ip_region($ip) {
+    if (!$ip) return '未知';
+    try {
+        $url = 'https://whois.pconline.com.cn/ipJson.jsp?ip=' . urlencode($ip) . '&json=true';
+        $ctx = stream_context_create([
+            'http' => ['timeout' => 3, 'ignore_errors' => true],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
+        ]);
+        $raw = @file_get_contents($url, false, $ctx);
+        if ($raw === false || $raw === '') return '未知';
+        $utf = @iconv('GBK', 'UTF-8//IGNORE', $raw);
+        $j = json_decode($utf !== false ? $utf : $raw, true);
+        if (!is_array($j)) return '未知';
+        $pro = trim((string)($j['pro'] ?? ''));
+        $city = trim((string)($j['city'] ?? ''));
+        $region = ($city !== '' && $city !== $pro) ? $pro . $city : $pro;
+        return $region !== '' ? $region : '未知';
+    } catch (Throwable $e) { return '未知'; }
+}
+
 function admin_authed($in) {
     if (session_status() !== PHP_SESSION_ACTIVE) session_start();
     if (!empty($_SESSION['luiyo_admin'])) return true;
@@ -259,7 +342,44 @@ if ($action === 'udid_done') {
     exit;
 }
 
+// ============ 滑块验证：发挑战 ============
+if ($action === 'captcha_new') {
+    $cid = gen_token();
+    $target = random_int(40, 960);   // 千分比缺口位置
+    $db->prepare("INSERT INTO captcha_challenges (cid,target,device_id,expires_at,used,created_at) VALUES (?,?,?,?,0,?)")
+       ->execute([$cid, $target, trim((string)($in['device_id'] ?? '')), $now + 120, $now]);
+    $db->prepare("DELETE FROM captcha_challenges WHERE expires_at<?")->execute([$now - 3600]);
+    resp(true, ['cid' => $cid, 'target' => $target]);
+}
+
+// ============ 滑块验证：校验并签发 proof ============
+if ($action === 'captcha_verify') {
+    $cid = trim((string)($in['cid'] ?? ''));
+    $x = (int)($in['x'] ?? -10000);
+    $duration = (int)($in['duration_ms'] ?? 0);
+    $device = trim((string)($in['device_id'] ?? ''));
+    $st = $db->prepare("SELECT * FROM captcha_challenges WHERE cid=?");
+    $st->execute([$cid]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c || (int)$c['used'] === 1 || (int)$c['expires_at'] < $now) {
+        resp(false, ['error' => '验证已过期，请重试', 'code' => 'captcha_failed']);
+    }
+    // 挑战一次性：任何一次校验尝试都消耗掉，防暴力试探
+    $db->prepare("UPDATE captcha_challenges SET used=1 WHERE cid=?")->execute([$cid]);
+    // 通过条件：落点与缺口偏差 ≤40（千分比），且拖动时长 ≥400ms（防脚本瞬移）
+    if (abs($x - (int)$c['target']) > 40 || $duration < 400) {
+        resp(false, ['error' => '未对准缺口，请再试一次', 'code' => 'captcha_failed']);
+    }
+    $proof = gen_token();
+    $db->prepare("INSERT INTO captcha_proofs (proof,device_id,expires_at,created_at) VALUES (?,?,?,?)")
+       ->execute([$proof, $device, $now + 600, $now]);
+    $db->prepare("DELETE FROM captcha_proofs WHERE expires_at<?")->execute([$now - 3600]);
+    resp(true, ['proof' => $proof, 'expires_in' => 600]);
+}
+
 if ($action === 'send_code') {
+    require_captcha($in);
+    captcha_log_use($in, 'send_code');
     $email = strtolower(trim($in['email'] ?? ''));
     $purpose = $in['purpose'] ?? 'register';
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) resp(false, ['error' => '邮箱格式不对']);
@@ -286,6 +406,8 @@ if ($action === 'send_code') {
 
 // ============ 注册 ============
 if ($action === 'register') {
+    require_captcha($in);
+    captcha_log_use($in, 'register');
     $email = strtolower(trim($in['email'] ?? ''));
     $password = $in['password'] ?? '';
     $code = trim($in['code'] ?? '');
@@ -309,6 +431,8 @@ if ($action === 'register') {
 
 // ============ 找回密码（邮箱验证码重置） ============
 if ($action === 'reset_password') {
+    require_captcha($in);
+    captcha_log_use($in, 'reset_password');
     $email = strtolower(trim($in['email'] ?? ''));
     $password = $in['password'] ?? '';
     $code = trim($in['code'] ?? '');
@@ -334,6 +458,8 @@ if ($action === 'reset_password') {
 
 // ============ 登录（含安全 1/2/3/5） ============
 if ($action === 'login') {
+    require_captcha($in);
+    captcha_log_use($in, 'login');
     $email = strtolower(trim($in['email'] ?? ''));
     $password = $in['password'] ?? '';
     $device_id = trim($in['device_id'] ?? '');
@@ -386,15 +512,16 @@ if ($action === 'login') {
         $h = ceil((86400 - ($now - $u['device_switch_at'])) / 3600);
         resp(false, ['error' => "换设备太频繁，{$h}小时后再试", 'cooldown' => true]);
     }
-    // 安全2：新设备需邮箱确认
-    $ctoken = gen_token();
-    $db->prepare("INSERT INTO device_confirms (user_id,device_id,token,expires_at,used,created_at) VALUES (?,?,?,?,0,?)")
-       ->execute([$u['id'], $device_id, $ctoken, $now + 1800, $now]);
-    $link = BASE_URL . '/user-auth-v2.php?action=confirm_device&token=' . $ctoken;
-    $sent = send_qq_email($u['email'], "LUIYo 新设备登录确认",
-        "有人在新设备上登录你的账号。\r\n如果这是你本人操作，请在30分钟内打开下面链接确认，旧设备将自动下线：\r\n" . $link . "\r\n如果不是你本人，请忽略并修改密码。");
-    if (!$sent) resp(false, ['error' => '确认邮件发送失败，稍后再试']);
-    resp(true, ['need_confirm' => true, 'msg' => '新设备登录：确认邮件已发送，请去邮箱点确认链接，然后在 App 点「我已确认」']);
+    // 安全2（新）：新设备登录——滑块验证已在入口把关，这里直接切换
+    // 设备（旧设备自动下线），并把这次新设备登录的时间 / IP / 省市
+    // 记在账号上，后台账号列表会以「新设备登录」标出供管理员留意。
+    $ip = client_ip();
+    $region = ip_region($ip);
+    $db->prepare("UPDATE users SET current_device_id=?, device_switch_at=?, last_login_at=?, failed_count=0, last_new_device_at=?, last_login_ip=?, last_login_region=? WHERE id=?")
+       ->execute([$device_id, $now, $now, $now, $ip, $region, $u['id']]);
+    log_login($db, $u['id'], $device_id, $now);
+    $svip = $u['svip_expires_at'] > $now;
+    resp(true, ['user_id' => (int)$u['id'], 'email' => $u['email'], 'token' => $device_id, 'svip' => $svip, 'svip_expires_at' => (int)$u['svip_expires_at']]);
 }
 
 // App 点「我已确认」后轮询这个接口
@@ -486,9 +613,22 @@ if ($action === 'status') {
 if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card', 'admin_delete_card', 'admin_mail_log'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
-        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,ban_title,ban_subtitle,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
+        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,ban_title,ban_subtitle,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at,last_new_device_at,last_login_ip,last_login_region FROM users ORDER BY id DESC LIMIT 200");
+        // 今日验证次数（Build 38）：captcha_log 中今天（服务器本地日期
+        // 零点起）每个邮箱的消费行数，一次聚合查完再逐行贴上
+        $captchaToday = [];
+        $cst = $db->prepare("SELECT email, COUNT(*) AS c FROM captcha_log WHERE created_at>=? GROUP BY email");
+        $cst->execute([strtotime(date('Y-m-d'))]);
+        while ($cr = $cst->fetch(PDO::FETCH_ASSOC)) $captchaToday[$cr['email']] = (int)$cr['c'];
         $list = [];
-        while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $r['svip'] = $r['svip_expires_at'] > $now; $list[] = $r; }
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $r['captcha_today'] = $captchaToday[$r['email']] ?? 0;
+            $r['svip'] = $r['svip_expires_at'] > $now;
+            $r['last_new_device_at'] = (int)($r['last_new_device_at'] ?? 0);
+            $r['last_login_ip'] = $r['last_login_ip'] ?? '';
+            $r['last_login_region'] = $r['last_login_region'] ?? '';
+            $list[] = $r;
+        }
         resp(true, ['users' => $list, 'total' => count($list)]);
     }
     if ($action === 'admin_mail_log') {

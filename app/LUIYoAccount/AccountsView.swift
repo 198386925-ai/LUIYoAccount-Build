@@ -9,7 +9,10 @@ import UIKit
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    @State private var list: [AccountUser] = []
+    /// 列表直接读 App 级缓存（Build 38）：切 tab / 页面再出现都不整表
+    /// 重拉；封禁 / 越狱 / 取消标红由 API 就地改缓存行，本页自动刷新；
+    /// 只有右上「刷新」和下拉刷新才回源
+    private var list: [AccountUser] { api.accountsCache ?? [] }
     @State private var loading = false
     @State private var error: String?
     @State private var notice: String?
@@ -117,7 +120,7 @@ struct AccountsView: View {
                         }
                     }
                     .compactSectionSpacing()
-                    .refreshable { await reload() }
+                    .refreshable { await reload(force: true) }
                 }
             }
             .navigationTitle("账号管理")
@@ -127,7 +130,8 @@ struct AccountsView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     // Build 37：右上「退出」按用户要求删掉，换成「刷新」
                     //（退出登录在设置页里，本来就有，不受影响）
-                    Button("刷新") { Task { await reload() } }
+                    // Build 38：这是本页唯一的整表回源入口（连同下拉刷新）
+                    Button("刷新") { Task { await reload(force: true) } }
                 }
             }
             .task { await reload() }
@@ -263,7 +267,10 @@ struct AccountsView: View {
                             .textSelection(.enabled)
                     }
                     HStack {
-                        Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
+                        // 今日验证（Build 38）：后端 captcha_today 在才拼
+                        // 「· 今日验证 X 次」；老后端没这字段整段不显示
+                        Text("越狱允许：" + (u.allowJailbreak ? "是" : "否")
+                             + (u.captchaToday.map { " · 今日验证 \($0) 次" } ?? ""))
                         Spacer()
                         if u.svip {
                             Text("SVIP 到期 " + u.svipExpiresText)
@@ -274,8 +281,10 @@ struct AccountsView: View {
                 }
             }
             Spacer(minLength: 6)
-            // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）
-            VStack(alignment: .trailing, spacing: 1) {
+            // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）；
+            // Build 38：整列左边缘对齐——免费/SVIP 和下面 IP异常 的左边缘
+            // 在同一条竖线上（原来各自右对齐，左边缘参差不齐）
+            VStack(alignment: .leading, spacing: 1) {
                 if u.isBanned {
                     tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
                 } else if u.svip {
@@ -332,11 +341,11 @@ struct AccountsView: View {
             .cornerRadius(8)
     }
 
-    private func reload() async {
+    private func reload(force: Bool = false) async {
         loading = true
         defer { loading = false }
         do {
-            list = try await api.accounts()
+            _ = try await api.accounts(force: force)
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
         }
@@ -347,7 +356,8 @@ struct AccountsView: View {
             do {
                 try await op()
                 notice = "已生效"
-                await reload()
+                // Build 38：不再操作完就整表重拉——API 已就地把缓存行
+                // 改好（@Published），本页跟着自动刷新
             } catch {
                 if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
             }

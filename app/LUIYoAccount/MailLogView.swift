@@ -7,7 +7,9 @@ import SwiftUI
 struct MailLogView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    @State private var logs: [MailLogItem] = []
+    /// 邮件记录直接读 App 级缓存（Build 38）：会话内只拉一次，
+    /// 再进本页不重拉；只有下拉刷新才回源
+    private var logs: [MailLogItem] { api.mailCache ?? [] }
     @State private var loaded = false
     @State private var error: String?
     /// 邮件卡收起/展开（Build 35）：按记录 id 记展开状态，默认全收起
@@ -62,15 +64,15 @@ struct MailLogView: View {
         .compactSectionSpacing()
         .navigationTitle("邮件记录")
         .task { await load() }
-        .refreshable { await load() }
+        .refreshable { await load(force: true) }
         .alert("错误", isPresented: .constant(error != nil)) {
             Button("好") { error = nil }
         } message: { Text(error ?? "") }
     }
 
-    private func load() async {
+    private func load(force: Bool = false) async {
         do {
-            logs = try await api.mailLogs()
+            _ = try await api.mailLogs(force: force)
             loaded = true
         } catch {
             if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }

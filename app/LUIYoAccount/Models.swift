@@ -15,6 +15,9 @@ struct AccountUser: Decodable, Identifiable {
     let allowJailbreak: Bool
     let createdAt: Int
     let lastLoginAt: Int
+    /// 今日滑块验证次数（Build 38 后端 captcha_log 统计）：老后端不返回这个
+    /// 字段时为 nil，界面整段不显示（不拿假 0 糊弄）
+    let captchaToday: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, email, svip
@@ -28,6 +31,7 @@ struct AccountUser: Decodable, Identifiable {
         case allowJailbreak = "allow_jailbreak"
         case createdAt = "created_at"
         case lastLoginAt = "last_login_at"
+        case captchaToday = "captcha_today"
     }
 
     /// is_banned 等字段服务端可能是 Bool / Int(0/1)，兼容解析
@@ -46,6 +50,46 @@ struct AccountUser: Decodable, Identifiable {
         allowJailbreak = Self.flexBool(c, .allowJailbreak)
         createdAt = (try? c.decode(Int.self, forKey: .createdAt)) ?? 0
         lastLoginAt = (try? c.decode(Int.self, forKey: .lastLoginAt)) ?? 0
+        captchaToday = try? c.decode(Int.self, forKey: .captchaToday)
+    }
+
+    /// 全参初始化（Build 38）：缓存就地更新（封禁 / 越狱开关 / 取消标红后不
+    /// 重拉整表）时按原值复制一行、只换动过的字段
+    init(id: Int, email: String, isBanned: Bool, banReason: String, banTitle: String,
+         banSubtitle: String, svip: Bool, svipExpiresAt: Int, ipFlagged: Bool,
+         udid: String, allowJailbreak: Bool, createdAt: Int, lastLoginAt: Int,
+         captchaToday: Int?) {
+        self.id = id
+        self.email = email
+        self.isBanned = isBanned
+        self.banReason = banReason
+        self.banTitle = banTitle
+        self.banSubtitle = banSubtitle
+        self.svip = svip
+        self.svipExpiresAt = svipExpiresAt
+        self.ipFlagged = ipFlagged
+        self.udid = udid
+        self.allowJailbreak = allowJailbreak
+        self.createdAt = createdAt
+        self.lastLoginAt = lastLoginAt
+        self.captchaToday = captchaToday
+    }
+
+    /// 复制一行并替换给定字段（没传的保持原值）
+    func with(isBanned: Bool? = nil, banReason: String? = nil, banTitle: String? = nil,
+              banSubtitle: String? = nil, ipFlagged: Bool? = nil,
+              allowJailbreak: Bool? = nil) -> AccountUser {
+        AccountUser(id: id, email: email,
+                    isBanned: isBanned ?? self.isBanned,
+                    banReason: banReason ?? self.banReason,
+                    banTitle: banTitle ?? self.banTitle,
+                    banSubtitle: banSubtitle ?? self.banSubtitle,
+                    svip: svip, svipExpiresAt: svipExpiresAt,
+                    ipFlagged: ipFlagged ?? self.ipFlagged,
+                    udid: udid,
+                    allowJailbreak: allowJailbreak ?? self.allowJailbreak,
+                    createdAt: createdAt, lastLoginAt: lastLoginAt,
+                    captchaToday: captchaToday)
     }
 
     private static func flexBool(_ c: KeyedDecodingContainer<CodingKeys>, _ k: CodingKeys) -> Bool {
@@ -201,6 +245,27 @@ struct CardItem: Decodable, Identifiable {
         remark = (try? c.decode(String.self, forKey: .remark)) ?? ""
         boundUdid = (try? c.decode(String.self, forKey: .boundUdid)) ?? ""
         boundAt = (try? c.decode(Int.self, forKey: .boundAt)) ?? 0
+    }
+
+    /// 全参初始化（Build 38）：缓存就地更新（作废 / 恢复后不重拉整表）用
+    init(id: Int, code: String, disabled: Bool, days: Int, createdAt: Int,
+         boundEmail: String, remark: String, boundUdid: String, boundAt: Int) {
+        self.id = id
+        self.code = code
+        self.disabled = disabled
+        self.days = days
+        self.createdAt = createdAt
+        self.boundEmail = boundEmail
+        self.remark = remark
+        self.boundUdid = boundUdid
+        self.boundAt = boundAt
+    }
+
+    /// 复制一张卡并替换作废状态
+    func withDisabled(_ disabled: Bool) -> CardItem {
+        CardItem(id: id, code: code, disabled: disabled, days: days,
+                 createdAt: createdAt, boundEmail: boundEmail, remark: remark,
+                 boundUdid: boundUdid, boundAt: boundAt)
     }
 
     var isBound: Bool { !boundEmail.isEmpty }
