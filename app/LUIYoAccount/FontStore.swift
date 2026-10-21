@@ -120,11 +120,17 @@ final class FontStore: ObservableObject {
     }
 
     /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放；
-    /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）
+    /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）。
+    /// 小字样式（caption / caption2 / footnote——用户所有「间距远」的反馈都出在这几档）再额外
+    /// 收紧一份：12pt 参考下 −1pt，按渲染字号等比缩放，和墨迹补偿合起来一起过 45% 安全线。
+    /// 这个量在离线用用户字体真渲染验过：CJK 墨迹间隙仍为正、不会叠字，不能再大
     func scaledTracking(for style: Font.TextStyle) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
         let rendered = Self.baseSize(for: style) * factor * Self.fixedScale
-        let raw = trackingCompensation * rendered / 17
+        var raw = trackingCompensation * rendered / 17
+        if style == .caption || style == .caption2 || style == .footnote {
+            raw += -1.0 * rendered / 12
+        }
         return max(raw, -0.45 * rendered)
     }
 

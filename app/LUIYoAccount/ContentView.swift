@@ -39,6 +39,11 @@ struct ContentView: View {
     @State private var savedGroup: BarGroup = .a
     @State private var savedOrigin: AppTab = .accounts
     @State private var mountedPages: Set<AppTab> = [.accounts]
+    /// 底栏选中高亮胶囊当前停在哪个槽位：和 currentPage 分开的一份状态。
+    /// 切页/换组时 currentPage 一律走禁用动画的事务（瞬间到位、不串页），
+    /// 只有这份状态在同一组内点选时用 withAnimation 更新，让玻璃高亮在底栏内部
+    /// 自己滑动变形——动画上下文被关在底栏子树里，泄不到页面 ZStack 上。
+    @State private var capsuleTab: AppTab? = .accounts
     @Namespace private var glassNS
 
     var body: some View {
@@ -123,6 +128,8 @@ struct ContentView: View {
                 GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
             }
         }
+        // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
+        .transaction { $0.animation = nil }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Color.clear.frame(height: 92)
         }
@@ -136,47 +143,66 @@ struct ContentView: View {
 
     private var barSpring: Animation { .spring(response: 0.38, dampingFraction: 0.82) }
 
+    /// 禁用动画的事务：切页、换组、开关搜索的状态变更全部走它——
+    /// 新页同帧全显、旧页同帧全消，项集和出处圆钮也是硬切，两组永不同时在场
+    private var instant: Transaction {
+        var t = Transaction()
+        t.disablesAnimations = true
+        return t
+    }
+
     /// 首次进入时把状态对齐当前排序：A 组里选中的必须是底栏前 3 页之一
     private func normalizeGlassOnAppear() {
         if barGroup == .a && !tabOrder.barTabs.contains(currentPage) {
             currentPage = tabOrder.barTabs.first ?? .accounts
         }
         originTab = currentPage
+        capsuleTab = currentPage
         mountedPages.insert(currentPage)
     }
 
-    /// 排序变化（外观页拖动）：玻璃外壳一律重置回 A 组，保证状态和新顺序一致
+    /// 排序变化（外观页拖动）：玻璃外壳一律重置回 A 组，保证状态和新顺序一致（硬切）
     private func resetGlassForOrderChange() {
-        searchShown = false
-        barGroup = .a
-        if !tabOrder.barTabs.contains(currentPage) {
-            currentPage = tabOrder.barTabs.first ?? tabOrder.order.first ?? .accounts
+        withTransaction(instant) {
+            searchShown = false
+            barGroup = .a
+            if !tabOrder.barTabs.contains(currentPage) {
+                currentPage = tabOrder.barTabs.first ?? tabOrder.order.first ?? .accounts
+            }
+            originTab = currentPage
+            capsuleTab = currentPage
         }
-        originTab = currentPage
         mountedPages.insert(currentPage)
     }
 
+    /// 点胶囊里同组的另一页：页面本身瞬间到位（禁用动画事务），
+    /// 只有高亮胶囊的状态带动画更新——玻璃胶囊在底栏内部从旧槽位滑到新槽位，
+    /// 这份动画只影响读 capsuleTab 的槽位视图，进不了页面 ZStack
     private func selectPage(_ tab: AppTab) {
         mountedPages.insert(tab)
-        withAnimation(barSpring) { currentPage = tab }
+        withTransaction(instant) { currentPage = tab }
+        withAnimation(barSpring) { capsuleTab = tab }
     }
 
-    /// 点「…」进 B 组：当前页记为出处（弹到胶囊左侧当圆钮），选中其余页的第一个
+    /// 点「…」进 B 组：当前页记为出处（弹到胶囊左侧当圆钮），选中其余页的第一个。
+    /// 整组硬切：项集、页面、高亮位置同一帧全换到位，不许淡入淡出
     private func enterGroupB() {
         guard let first = tabOrder.moreTabs.first else { return }
         mountedPages.insert(first)
-        withAnimation(barSpring) {
+        withTransaction(instant) {
             originTab = currentPage
             barGroup = .b
             currentPage = first
+            capsuleTab = first
         }
     }
 
-    /// 点出处圆钮：回 A 组并选中出处页
+    /// 点出处圆钮：回 A 组并选中出处页（同样硬切，高亮直接落在出处槽位，不滑动）
     private func backToOrigin() {
-        withAnimation(barSpring) {
+        withTransaction(instant) {
             barGroup = .a
             currentPage = originTab
+            capsuleTab = originTab
         }
     }
 
@@ -184,25 +210,30 @@ struct ContentView: View {
         savedPage = currentPage
         savedGroup = barGroup
         savedOrigin = originTab
-        withAnimation(barSpring) { searchShown = true }
+        withTransaction(instant) {
+            searchShown = true
+            capsuleTab = nil
+        }
     }
 
-    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组
+    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组（硬切）
     private func closeSearch() {
-        withAnimation(barSpring) {
+        withTransaction(instant) {
             searchShown = false
             currentPage = savedPage
             barGroup = savedGroup
             originTab = savedOrigin
+            capsuleTab = savedPage
         }
     }
 
     /// 搜索点中结果：底栏页 → 回 A 组选中它；其余页 → 进 B 组选中它，
-    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）
+    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）。
+    /// 跨组跳转，高亮直接到位、不滑动（硬切）
     private func pickFromSearch(_ tab: AppTab) {
         let returnOrigin = savedGroup == .a ? savedPage : savedOrigin
         mountedPages.insert(tab)
-        withAnimation(barSpring) {
+        withTransaction(instant) {
             searchShown = false
             if tabOrder.barTabs.contains(tab) {
                 barGroup = .a
@@ -212,6 +243,7 @@ struct ContentView: View {
                 originTab = returnOrigin
                 currentPage = tab
             }
+            capsuleTab = tab
         }
     }
 
@@ -255,16 +287,20 @@ struct ContentView: View {
                 HStack(spacing: 0) {
                     if barGroup == .a {
                         ForEach(tabOrder.barTabs) { tab in
-                            glassSlot(icon: tab.icon, selected: !searchShown && currentPage == tab) {
+                            glassSlot(icon: tab.icon,
+                                      capsule: capsuleTab == tab,
+                                      tinted: !searchShown && currentPage == tab) {
                                 selectPage(tab)
                             }
                         }
-                        glassSlot(icon: "ellipsis", selected: false) {
+                        glassSlot(icon: "ellipsis", capsule: false, tinted: false) {
                             enterGroupB()
                         }
                     } else {
                         ForEach(tabOrder.moreTabs) { tab in
-                            glassSlot(icon: tab.icon, selected: !searchShown && currentPage == tab) {
+                            glassSlot(icon: tab.icon,
+                                      capsule: capsuleTab == tab,
+                                      tinted: !searchShown && currentPage == tab) {
                                 selectPage(tab)
                             }
                         }
@@ -276,12 +312,14 @@ struct ContentView: View {
         .frame(width: width, height: 56)
     }
 
-    /// 胶囊里的一个图标项：只有图标没有文字，点按区域是整个等宽槽位
+    /// 胶囊里的一个图标项：只有图标没有文字，点按区域是整个等宽槽位。
+    /// capsule（高亮在不在这一格）读 capsuleTab——只有它带动画，是同组内滑动变形的来源；
+    /// tinted（图标变不变蓝）读 currentPage——跟页面一起瞬间到位
     @available(iOS 26.0, *)
-    private func glassSlot(icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func glassSlot(icon: String, capsule: Bool, tinted: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             ZStack {
-                if selected {
+                if capsule {
                     Capsule()
                         .fill(Color.clear)
                         .glassEffect(.regular.tint(Color.gray.opacity(0.28)), in: Capsule())
@@ -291,7 +329,7 @@ struct ContentView: View {
                 }
                 Image(systemName: icon)
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(selected ? Color.accentColor : Color.primary)
+                    .foregroundStyle(tinted ? Color.accentColor : Color.primary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
