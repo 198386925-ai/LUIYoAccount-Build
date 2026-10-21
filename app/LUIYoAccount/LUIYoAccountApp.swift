@@ -5,6 +5,11 @@ import SwiftUI
 struct LUIYoAccountApp: App {
     @StateObject private var api = AccountAPI()
 
+    init() {
+        // 启动先把用户导入的字体注册进进程，全局字体设置才能生效
+        FontStore.registerAll()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

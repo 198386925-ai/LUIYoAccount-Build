@@ -6,7 +6,8 @@ struct CardsView: View {
     @EnvironmentObject var api: AccountAPI
     @State private var cards: [CardItem] = []
     @State private var countText = "10"
-    @State private var daysText = "30"
+    @State private var days = 30
+    @State private var cardFilter: CardFilter = .all
     @State private var remarkText = ""
     @State private var deleteTarget: CardItem?
     @State private var newCodes: [String] = []
@@ -17,6 +18,16 @@ struct CardsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    Picker("分类", selection: $cardFilter) {
+                        ForEach(CardFilter.allCases, id: \.self) { f in
+                            Text(f.rawValue).tag(f)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+
                 Section("生成卡密") {
                     HStack {
                         Text("数量")
@@ -29,10 +40,13 @@ struct CardsView: View {
                     HStack {
                         Text("SVIP 天数")
                         Spacer()
-                        TextField("30", text: $daysText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 90)
+                        Picker("SVIP 天数", selection: $days) {
+                            ForEach(dayOptions, id: \.self) { d in
+                                Text(d >= 36500 ? "永久" : "\(d) 天").tag(d)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
                     }
                     HStack {
                         Text("备注")
@@ -50,7 +64,7 @@ struct CardsView: View {
                         }
                     }
                     .disabled(generating)
-                    Text("格式：LUI-备注-随机码（备注可空）。天数填 36500 = 永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
+                    Text("格式：LUI-备注-随机码（备注可空）。天数从上面选，选「永久」就是永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
@@ -69,10 +83,12 @@ struct CardsView: View {
                                 Button("复制") { UIPasteboard.general.string = code }
                                     .font(.footnote)
                             }
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         }
                     }
                 }
 
+                if cardFilter != .unused {
                 Section("已使用（\(usedCards.count)）") {
                     if usedCards.isEmpty {
                         Text("暂无已使用的卡密")
@@ -82,7 +98,9 @@ struct CardsView: View {
                         usedRow(card)
                     }
                 }
+                }
 
+                if cardFilter != .used {
                 Section("未使用（\(unusedCards.count)）") {
                     if unusedCards.isEmpty {
                         Text("暂无未使用的卡密")
@@ -92,7 +110,9 @@ struct CardsView: View {
                         unusedRow(card)
                     }
                 }
+                }
             }
+            .compactSectionSpacing()
             .navigationTitle("生成卡密")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -120,6 +140,14 @@ struct CardsView: View {
 
     private var usedCards: [CardItem] { cards.filter { $0.isBound } }
     private var unusedCards: [CardItem] { cards.filter { !$0.isBound } }
+
+    enum CardFilter: String, CaseIterable {
+        case all = "全部"
+        case used = "已使用"
+        case unused = "未使用"
+    }
+
+    private let dayOptions = [30, 90, 180, 365, 36500]
 
     private func usedRow(_ card: CardItem) -> some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -152,7 +180,8 @@ struct CardsView: View {
             }
             actionRow(card)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
     }
 
     private func unusedRow(_ card: CardItem) -> some View {
@@ -173,7 +202,8 @@ struct CardsView: View {
                 .foregroundColor(.secondary)
             actionRow(card)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
     }
 
     private func copyLine(_ label: String, _ value: String, mono: Bool = false, color: Color = .primary) -> some View {
@@ -240,7 +270,7 @@ struct CardsView: View {
 
     private func generate() async {
         let count = max(1, min(100, Int(countText) ?? 10))
-        let days = max(1, Int(daysText) ?? 30)
+        let days = self.days
         generating = true
         defer { generating = false }
         do {

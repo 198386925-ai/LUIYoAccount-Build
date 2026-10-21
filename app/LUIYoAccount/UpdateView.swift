@@ -75,6 +75,7 @@ struct UpdateView: View {
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
+            .compactSectionSpacing()
             .navigationTitle("应用更新")
             .sheet(isPresented: $showPicker) {
                 IPADocumentPicker { url in

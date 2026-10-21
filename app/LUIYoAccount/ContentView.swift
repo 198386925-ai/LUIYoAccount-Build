@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var api: AccountAPI
     @State private var autoDone = false
+    @AppStorage(FontStore.defaultsKey) private var globalFontPS = ""
 
     var body: some View {
         Group {
@@ -26,7 +27,12 @@ struct ContentView: View {
                 LoginView()
             }
         }
+        .modifier(GlobalFontModifier(psName: globalFontPS))
+        .onChange(of: globalFontPS) { newValue in
+            FontStore.applyNavigationBarFont(psName: newValue)
+        }
         .onAppear {
+            FontStore.applyNavigationBarFont(psName: globalFontPS)
             // 自动登录：有保存的密码就直接进，不用每次输
             guard !autoDone else { return }
             if let saved = Keychain.load(), !saved.isEmpty {

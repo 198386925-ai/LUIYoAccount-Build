@@ -9,37 +9,40 @@ struct MailLogView: View {
 
     var body: some View {
         NavigationView {
-            List {
-                if logs.isEmpty {
-                    Text(loaded ? "暂无发信记录" : "加载中…")
-                        .foregroundColor(.secondary)
-                }
-                ForEach(logs) { m in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(m.toEmail)
-                                .font(.subheadline).bold()
-                            Spacer()
-                            Text(m.ok ? "发送成功" : "发送失败")
-                                .font(.caption).bold()
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(m.ok ? Color.green : Color.red)
-                                .foregroundColor(.white)
-                                .clipShape(Capsule())
-                        }
-                        if !m.subject.isEmpty {
-                            Text(m.subject)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Text(m.createdText)
-                            .font(.caption2)
+            Form {
+                Section {
+                    if logs.isEmpty {
+                        Text(loaded ? "暂无发信记录" : "加载中…")
                             .foregroundColor(.secondary)
                     }
-                    .padding(.vertical, 2)
+                    ForEach(logs) { m in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(m.toEmail)
+                                    .font(.subheadline).bold()
+                                Spacer()
+                                Text(m.ok ? "发送成功" : "发送失败")
+                                    .font(.caption).bold()
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(m.ok ? Color.green : Color.red)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            if !m.subject.isEmpty {
+                                Text(m.subject)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Text(m.createdText)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    }
                 }
             }
+            .compactSectionSpacing()
             .navigationTitle("邮件记录")
             .task { await load() }
             .refreshable { await load() }

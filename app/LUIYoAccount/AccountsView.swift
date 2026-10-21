@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 邮箱账号管理：列表（SVIP/免费/已封禁/IP异常）+ 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红
+/// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
+/// + 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @State private var list: [AccountUser] = []
@@ -10,12 +11,22 @@ struct AccountsView: View {
     @State private var query = ""
     @State private var banTarget: AccountUser?
     @State private var banReason = ""
+    @State private var filter: AccountFilter = .all
+
+    enum AccountFilter: String, CaseIterable {
+        case all = "全部"
+        case svip = "已授权"
+        case free = "未授权"
+    }
 
     var filtered: [AccountUser] {
         guard !query.isEmpty else { return list }
         let q = query.lowercased()
         return list.filter { $0.email.lowercased().contains(q) }
     }
+
+    private var svipAccounts: [AccountUser] { filtered.filter { $0.svip } }
+    private var freeAccounts: [AccountUser] { filtered.filter { !$0.svip } }
 
     var body: some View {
         NavigationView {
@@ -28,76 +39,50 @@ struct AccountsView: View {
                         .foregroundColor(.secondary)
                         .padding()
                 } else {
-                    List(filtered) { u in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(u.email)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                Spacer()
-                                if u.isBanned {
-                                    tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
-                                } else if u.svip {
-                                    tag("SVIP", bg: Color.green.opacity(0.15), fg: .green)
-                                } else {
-                                    tag("免费", bg: Color.gray.opacity(0.15), fg: .secondary)
-                                }
-                                if u.ipFlagged {
-                                    tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
+                    Form {
+                        Section {
+                            Picker("分类", selection: $filter) {
+                                ForEach(AccountFilter.allCases, id: \.self) { f in
+                                    Text(f.rawValue).tag(f)
                                 }
                             }
-                            if u.isBanned && !u.banReason.isEmpty {
-                                Text("封禁理由：" + u.banReason)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                            HStack {
-                                Text("注册 " + u.createdText)
-                                Text("·")
-                                Text("最后登录 " + u.lastLoginText)
-                            }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            if !u.udid.isEmpty {
-                                Text("UDID " + u.udid)
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                            HStack {
-                                Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
-                                Spacer()
-                                if u.svip {
-                                    Text("SVIP 到期 " + u.svipExpiresText)
-                                }
-                            }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .pickerStyle(.segmented)
                         }
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-                        .swipeActions(edge: .trailing) {
-                            if u.isBanned {
-                                Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
-                                    .tint(.green)
-                            } else {
-                                Button("封禁") { banTarget = u; banReason = "" }
-                                    .tint(.red)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+
+                        switch filter {
+                        case .all:
+                            Section("已授权（\(svipAccounts.count)）") {
+                                if svipAccounts.isEmpty {
+                                    Text("暂无已授权账号")
+                                        .foregroundColor(.secondary)
+                                }
+                                ForEach(svipAccounts) { u in accountRow(u) }
                             }
-                            if u.allowJailbreak {
-                                Button("禁止越狱") { run { try await api.accountJailbreak(email: u.email, allow: false) } }
-                                    .tint(.gray)
-                            } else {
-                                Button("允许越狱") { run { try await api.accountJailbreak(email: u.email, allow: true) } }
-                                    .tint(.blue)
+                            Section("未授权（\(freeAccounts.count)）") {
+                                if freeAccounts.isEmpty {
+                                    Text("暂无未授权账号")
+                                        .foregroundColor(.secondary)
+                                }
+                                ForEach(freeAccounts) { u in accountRow(u) }
                             }
-                            if u.ipFlagged {
-                                Button("取消标红") { run { try await api.accountUnflag(email: u.email) } }
-                                    .tint(.orange)
+                        case .svip:
+                            if svipAccounts.isEmpty {
+                                Section { Text("暂无已授权账号").foregroundColor(.secondary) }
+                            }
+                            ForEach(svipAccounts) { u in
+                                Section { accountRow(u) }
+                            }
+                        case .free:
+                            if freeAccounts.isEmpty {
+                                Section { Text("暂无未授权账号").foregroundColor(.secondary) }
+                            }
+                            ForEach(freeAccounts) { u in
+                                Section { accountRow(u) }
                             }
                         }
                     }
-                    .listStyle(.plain)
+                    .compactSectionSpacing()
                     .refreshable { await reload() }
                 }
             }
@@ -127,6 +112,75 @@ struct AccountsView: View {
                 Button("取消", role: .cancel) { banTarget = nil }
             } message: {
                 if let u = banTarget { Text("封禁 \(u.email)？30 秒内在用户 App 生效。") }
+            }
+        }
+    }
+
+    private func accountRow(_ u: AccountUser) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(u.email)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                if u.isBanned {
+                    tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
+                } else if u.svip {
+                    tag("SVIP", bg: Color.green.opacity(0.15), fg: .green)
+                } else {
+                    tag("免费", bg: Color.gray.opacity(0.15), fg: .secondary)
+                }
+                if u.ipFlagged {
+                    tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
+                }
+            }
+            if u.isBanned && !u.banReason.isEmpty {
+                Text("封禁理由：" + u.banReason)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+            HStack {
+                Text("注册 " + u.createdText)
+                Text("·")
+                Text("最后登录 " + u.lastLoginText)
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            if !u.udid.isEmpty {
+                Text("UDID " + u.udid)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+            HStack {
+                Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
+                Spacer()
+                if u.svip {
+                    Text("SVIP 到期 " + u.svipExpiresText)
+                }
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .swipeActions(edge: .trailing) {
+            if u.isBanned {
+                Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
+                    .tint(.green)
+            } else {
+                Button("封禁") { banTarget = u; banReason = "" }
+                    .tint(.red)
+            }
+            if u.allowJailbreak {
+                Button("禁止越狱") { run { try await api.accountJailbreak(email: u.email, allow: false) } }
+                    .tint(.gray)
+            } else {
+                Button("允许越狱") { run { try await api.accountJailbreak(email: u.email, allow: true) } }
+                    .tint(.blue)
+            }
+            if u.ipFlagged {
+                Button("取消标红") { run { try await api.accountUnflag(email: u.email) } }
+                    .tint(.orange)
             }
         }
     }
