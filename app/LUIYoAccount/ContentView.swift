@@ -152,10 +152,10 @@ struct ContentView: View {
         // 保证任何环境重算（输入框聚焦等）都不会让全 App 字号跳变
         .dynamicTypeSize(.large)
         .environmentObject(tabOrder)
-        // 搜索胶囊的渲染下边距按玻璃外壳算 = 78（栏顶渲染 68 + 10，Build 31）；
+        // 搜索胶囊的渲染下边距按玻璃外壳算 = 84（栏顶渲染 74 + 10，Build 33）；
         // 胶囊的锚（GlobalSearchView 的 overlay）停在安全线上，注入的代码值 =
         // 渲染值 − 窗口底安全区活值；旧 TabView 外壳自己改成 93
-        .environment(\.searchBarBottom, max(78 - windowBottomInset, 0))
+        .environment(\.searchBarBottom, max(84 - windowBottomInset, 0))
         .onAppear {
             refreshWindowBottomInset()
             FontStore.applyUIKitAppearances()
@@ -217,13 +217,14 @@ struct ContentView: View {
     /// Build 30: 44 = 10 + 34）。31 版改用 GeometryReader 显式公式，
     /// 在「层真沉到物理底边」的那种布局结果下把安全区重复加了一遍，
     /// 栏被推到屏外（用户截图：只剩胶囊顶边一条露在屏幕底边上），整层
-    /// 删掉。32 版的下边距 = 4 − 窗口底安全区活值：用户机上 = 4 − 34 =
-    /// −30，把栏拉进主屏幕指示条区，渲染下边距恰好 4（贴底停靠，和
-    /// GitHub 那种原生栏一样）；钳制保证代码下边距不小于 −安全区，
-    /// 渲染间隙永不为负。
+    /// 删掉。32 版下边距 = 4 − 窗口底安全区活值（用户机上 = 4 − 34
+    /// = −30，渲染下边距恰好 4，贴底停靠）；33 版按用户要求把目标
+    /// 改成 10：下边距 = 10 − 窗口底安全区活值（用户机上 = 10 − 34
+    /// = −24），渲染下边距恰好 10，栏占 [10, 74]；钳制保证代码
+    /// 下边距不小于 −安全区，渲染间隙永不为负。
     /// 页面留白和搜索胶囊这两个锚同样停在安全线，代码值 = 渲染值 −
-    /// 窗口底安全区活值（31 版的换算保留）：页面留白渲染 98（栏顶渲染
-    /// 68 + 上方间隔 30），搜索胶囊渲染 78（栏顶 + 10，注入处换算）。
+    /// 窗口底安全区活值（31 版的换算保留）：页面留白渲染 104（栏顶
+    /// 渲染 74 + 上方间隔 30），搜索胶囊渲染 84（栏顶 + 10，注入处换算）。
     @available(iOS 26.0, *)
     private var glassShell: some View {
         ZStack {
@@ -243,7 +244,7 @@ struct ContentView: View {
         // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
         .transaction { $0.animation = nil }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: max(98 - windowBottomInset, 0))
+            Color.clear.frame(height: max(104 - windowBottomInset, 0))
         }
         .overlay(alignment: .bottom) {
             glassBar
@@ -256,10 +257,10 @@ struct ContentView: View {
         .onChange(of: currentPage) { mountedPages.insert($0) }
     }
 
-    /// 底栏下边距（代码值）：渲染下边距 4 − 窗口底安全区活值（见 glassShell
+    /// 底栏下边距（代码值）：渲染下边距 10 − 窗口底安全区活值（见 glassShell
     /// 注释）；钳制下限 −安全区，保证渲染间隙不会被拉成负数
     private var barBottomPadding: CGFloat {
-        max(4 - windowBottomInset, -windowBottomInset)
+        max(10 - windowBottomInset, -windowBottomInset)
     }
 
     /// 底栏唯一的一根弹簧（Build 28 定版，照原生底栏的切换手感调的
@@ -428,9 +429,10 @@ struct ContentView: View {
     /// 搜索圆钮直径、槽位项高全是它（代码常量和用户截图上量到的渲染高度
     /// 都是 64、上下边对齐）；选中胶囊高 52、圆钮高亮 60 是在 64 里留的
     /// 边距（上下各 6 / 各 2），不是第二个尺寸。栏的纵向位置（Build 32）：
-    /// 本体高 64，挂页面层的 overlay 底部锚，下边距 = 4 − 窗口底安全区
-    /// 活值，渲染下边距恰好 4——栏占 [4, 68]，贴底停靠，和 GitHub 那种
-    /// 原生栏一样沉进主屏幕指示条区，指示条压在胶囊下部玻璃上。
+    /// 本体高 64，挂页面层的 overlay 底部锚，下边距 = 10 − 窗口底
+    /// 安全区活值，渲染下边距恰好 10——栏占 [10, 74]（Build 33：32 版
+    /// 离底 4，用户要求上抬到 10），沉进主屏幕指示条区，指示条压在
+    /// 胶囊下部玻璃上。
     /// 换组时随进度插值的是胶囊玻璃的位置/宽度、出处字形的滑行和选中胶囊
     /// 的行程；其余槽位项各自永远用本组的静止帧，只淡入淡出、绝不横移；
     /// A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，永不叠压。

@@ -1,10 +1,14 @@
 import SwiftUI
 
 /// 版本管理（Build 32 从「应用更新」页拆出来，单独一个底栏页）：
-/// 版本列表，一条版本一张卡——卡头是「版本号 · Build · 状态」，卡里三行
-/// 输入框直接改弹窗文案（一级标题 / 二级文案 / 三级文案）、一行状态
-/// 选择（正常 / 弹更新 / 禁用），保存按钮一次写回（version_set 带全部字段）。
-/// 行高按 Build 32 的压缩口径：输入行上下内边距 7（Form 默认约 11）。
+/// 版本列表，一条版本一张卡——卡顶是信息块（版本号 · Build + 状态胶囊、
+/// 发布于、本次更新：老「应用更新」页列表行的长相，Build 33 按用户
+/// 要求搬进卡里），下面三行输入框直接改弹窗文案（一级标题 / 二级
+/// 文案 / 三级文案），保存按钮写回（version_set 只带文案、不带状态，
+/// 后端保持当前状态）。状态不在卡里改：对着卡顶信息行左滑出侧滑
+/// 按钮（弹更新 / 禁用 / 恢复正常，按当前状态只显示适用的——和
+/// Build 32 以前版本行的侧滑同一套）。
+/// 行高按 Build 33 的压缩口径：输入行上下内边距 4（Build 32 是 7）。
 struct VersionsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -55,8 +59,8 @@ struct VersionsView: View {
     }
 }
 
-/// 单条版本的编辑卡：三行输入框 + 状态分段 + 保存（状态在本卡内改，
-/// 不再用侧滑菜单和弹窗编辑器）
+/// 单条版本的编辑卡：卡顶信息块（只显示）+ 三行文案输入框 + 保存；
+/// 状态不在卡里改——信息行左滑出侧滑按钮改状态（见文件头注释）
 private struct VersionEditCard: View {
     @EnvironmentObject var api: AccountAPI
     let entry: VersionEntry
@@ -64,7 +68,6 @@ private struct VersionEditCard: View {
     @State private var title: String
     @State private var l2: String
     @State private var l3: String
-    @State private var state: String
     @State private var saving = false
     @State private var saved = false
     @State private var err: String?
@@ -75,21 +78,50 @@ private struct VersionEditCard: View {
         _title = State(initialValue: entry.title)
         _l2 = State(initialValue: entry.l2)
         _l3 = State(initialValue: entry.l3)
-        _state = State(initialValue: entry.state)
     }
 
     var body: some View {
         Section {
+            // 信息块（老列表行的长相）：版本号 · Build + 右侧状态胶囊（只显示），
+            // 下面发布于 / 本次更新两行只读小字（值空的那行不显示）。
+            // 改状态的侧滑挂在这一行上（弹更新 / 禁用 / 恢复正常，按当前状态
+            // 只显示适用的；点了直接 version_set 只带状态，文案不动）
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(entry.version) · Build \(entry.build)")
+                        .appFont(.headline)
+                    if entry.publishedAt > 0 {
+                        Text("发布于 " + entry.publishedText)
+                            .appFont(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if !entry.notes.isEmpty {
+                        Text("本次更新：" + entry.notes)
+                            .appFont(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer(minLength: 6)
+                versionChip
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .swipeActions(edge: .trailing) {
+                if entry.state != "soft" {
+                    Button("弹更新") { Task { await setState("soft") } }
+                        .tint(.orange)
+                }
+                if entry.state != "banned" {
+                    Button("禁用") { Task { await setState("banned") } }
+                        .tint(.red)
+                }
+                if entry.state != "normal" {
+                    Button("恢复正常") { Task { await setState("normal") } }
+                        .tint(.gray)
+                }
+            }
             fieldRow("一级标题", placeholder: "弹窗标题", text: $title)
             fieldRow("二级文案", placeholder: "第二行文案", text: $l2)
             fieldRow("三级文案", placeholder: "第三行文案", text: $l3)
-            Picker("状态", selection: $state) {
-                Text("正常").tag("normal")
-                Text("弹更新").tag("soft")
-                Text("禁用").tag("banned")
-            }
-            .pickerStyle(.segmented)
-            .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
             HStack {
                 Button {
                     Task { await save() }
@@ -112,10 +144,20 @@ private struct VersionEditCard: View {
                         .lineLimit(1)
                 }
             }
-            .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
-        } header: {
-            AppSectionHeader("\(entry.version) · Build \(entry.build) · \(entry.stateText)")
+            .frame(minHeight: 32)
+            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
         }
+    }
+
+    /// 状态胶囊（只显示、不可点）：老列表行同款——弹更新橙、禁用红、正常灰
+    private var versionChip: some View {
+        let color: Color = entry.state == "soft" ? .orange : (entry.state == "banned" ? .red : .gray)
+        return Text(entry.stateText)
+            .appFont(.caption)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .cornerRadius(8)
     }
 
     private func fieldRow(_ label: String, placeholder: String, text: Binding<String>) -> some View {
@@ -126,7 +168,19 @@ private struct VersionEditCard: View {
             TextField(placeholder, text: text)
                 .autocorrectionDisabled()
         }
-        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    /// 侧滑改状态：version_set 只带状态（不带文案），改完用回传列表刷新整页
+    private func setState(_ newState: String) async {
+        do {
+            let list = try await api.versionSet(build: entry.build, state: newState)
+            onSaved(list)
+        } catch {
+            if !error.isCancelError {
+                err = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     private func save() async {
@@ -135,7 +189,7 @@ private struct VersionEditCard: View {
         err = nil
         defer { saving = false }
         do {
-            let list = try await api.versionSet(build: entry.build, state: state, title: title, l2: l2, l3: l3)
+            let list = try await api.versionSet(build: entry.build, title: title, l2: l2, l3: l3)
             onSaved(list)
             saved = true
         } catch {

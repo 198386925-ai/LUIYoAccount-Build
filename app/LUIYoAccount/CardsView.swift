@@ -37,13 +37,13 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
                     }
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     VStack(alignment: .leading, spacing: 8) {
                         Text("SVIP 天数")
                         PillSegmented(options: [("30", "30天"), ("90", "90天"), ("180", "180天"), ("365", "365天"), ("36500", "永久")],
                                       selection: $daysValue)
                     }
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     HStack {
                         Text("备注")
                         Spacer()
@@ -51,7 +51,7 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 180)
                     }
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     Button {
                         Task { await generate() }
                     } label: {
@@ -61,7 +61,7 @@ struct CardsView: View {
                         }
                     }
                     .disabled(generating)
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 } header: {
                     AppSectionHeader("生成卡密")
                 }

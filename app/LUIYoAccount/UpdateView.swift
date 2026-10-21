@@ -48,22 +48,22 @@ struct UpdateView: View {
                             Text(pickedURL == nil ? "选择 IPA 文件" : "重新选择")
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     if pickedURL != nil {
                         LabeledContent("文件", value: pickedName)
-                        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                         LabeledContent("大小", value: sizeText(pickedSize))
-                        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
                     TextField("版本号（留空自动识别）", text: $version)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     TextField("构建号（留空自动识别）", text: $build)
                         .keyboardType(.numberPad)
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     TextField("更新说明（可空）", text: $notes)
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     Button {
                         Task { await doUpload() }
                     } label: {
@@ -73,11 +73,11 @@ struct UpdateView: View {
                         }
                     }
                     .disabled(pickedURL == nil || uploading)
-                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     if let m = resultMsg {
                         Text(m).appFont(.footnote)
                             .foregroundColor(resultOK ? .green : .red)
-                            .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
                 } header: {
                     AppSectionHeader("上传新 IPA")
