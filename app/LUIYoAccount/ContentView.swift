@@ -116,7 +116,7 @@ struct ContentView: View {
                     tabLabel(tab)
                 }
             }
-            Tab("搜索", systemImage: "magnifyingglass", value: ShellTab.search, role: .search) {
+            Tab("搜索", image: "TabIconSearch", value: ShellTab.search, role: .search) {
                 GlobalSearchView(onSelect: { navigateFromSearch($0) })
             }
         }
@@ -132,7 +132,7 @@ struct ContentView: View {
                     .tag(ShellTab.page(tab))
             }
             GlobalSearchView(onSelect: { navigateFromSearch($0) })
-                .tabItem { Label("搜索", systemImage: "magnifyingglass") }
+                .tabItem { Label { Text("搜索") } icon: { Image("TabIconSearch") } }
                 .tag(ShellTab.search)
         }
     }

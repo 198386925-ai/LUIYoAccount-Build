@@ -7,6 +7,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var settingsNav: SettingsNavRouter
+    /// 服务器组收起/展开（Build 35）：标题「服务器」可点切换，默认展开
+    @State private var serverExpanded = true
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -36,11 +38,21 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    LabeledContent("地址", value: "luioe.bbroot.com")
-                    LabeledContent("账号接口", value: "user-auth-v2.php")
-                    LabeledContent("更新源", value: "updates/latest.json")
+                    if serverExpanded {
+                        LabeledContent("地址", value: "luioe.bbroot.com")
+                        LabeledContent("账号接口", value: "user-auth-v2.php")
+                        LabeledContent("更新源", value: "updates/latest.json")
+                    }
                 } header: {
-                    AppSectionHeader("服务器")
+                    // 标题可点：收起/展开下面三行（标题文字不变、不加箭头，同组卡片口径）
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { serverExpanded.toggle() }
+                    } label: {
+                        AppSectionHeader("服务器")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 Section {
                     LabeledContent("版本", value: versionText)

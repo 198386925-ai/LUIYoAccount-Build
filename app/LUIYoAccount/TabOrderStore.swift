@@ -27,7 +27,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .mail: return "envelope.fill"
         case .update: return "arrow.up.circle.fill"
         case .versions: return "rectangle.stack.fill"
-        case .settings: return "gearshape.fill"
+        case .settings: return "gearshape"
         }
     }
 
@@ -37,6 +37,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .accounts: return "TabIconAccount"
         case .cards: return "TabIconCard"
+        case .versions: return "TabIconVersions"
         default: return nil
         }
     }

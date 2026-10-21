@@ -4,6 +4,8 @@ import UIKit
 /// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
 /// + 分类下方「封禁」表单（账号/标题/副标题/原因，被封用户在主 App 看到的就是这套文案）
 /// + 「已封禁」列表 / 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红 / 复制账号
+/// Build 35：账号卡可收起——收起只显示邮箱 + 右侧标识（免费/SVIP/已封禁，
+/// 不加箭头），点卡展开才显示注册/最后登录/UDID/越狱允许等详情行
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -14,6 +16,8 @@ struct AccountsView: View {
     @State private var banTarget: AccountUser?
     @State private var banReason = ""
     @State private var filter: AccountFilter = .all
+    /// 账号卡收起/展开（Build 35）：按邮箱记展开状态，默认全收起
+    @State private var expandedAccounts: Set<String> = []
     // 封禁表单（分类切换正下方）
     @State private var banEmail = ""
     @State private var banFormTitle = ""
@@ -234,34 +238,38 @@ struct AccountsView: View {
     // MARK: - 账号行
 
     private func accountRow(_ u: AccountUser) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        let expanded = expandedAccounts.contains(u.email)
+        return HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
-                if u.isBanned && !u.banReason.isEmpty {
-                    Text("封禁理由：" + u.banReason)
+                // 详情只在展开时显示（Build 35）：收起 = 邮箱 + 右侧标识，不加箭头
+                if expanded {
+                    if u.isBanned && !u.banReason.isEmpty {
+                        Text("封禁理由：" + u.banReason)
+                            .appFont(.caption)
+                            .foregroundColor(.red)
+                    }
+                    Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
                         .appFont(.caption)
-                        .foregroundColor(.red)
-                }
-                Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
+                        .foregroundColor(.secondary)
+                    if !u.udid.isEmpty {
+                        Text("UDID " + u.udid)
+                            .appFont(.caption2, design: .monospaced)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    HStack {
+                        Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
+                        Spacer()
+                        if u.svip {
+                            Text("SVIP 到期 " + u.svipExpiresText)
+                        }
+                    }
                     .appFont(.caption)
                     .foregroundColor(.secondary)
-                if !u.udid.isEmpty {
-                    Text("UDID " + u.udid)
-                        .appFont(.caption2, design: .monospaced)
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
                 }
-                HStack {
-                    Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
-                    Spacer()
-                    if u.svip {
-                        Text("SVIP 到期 " + u.svipExpiresText)
-                    }
-                }
-                .appFont(.caption)
-                .foregroundColor(.secondary)
             }
             Spacer(minLength: 6)
             // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）
@@ -276,6 +284,13 @@ struct AccountsView: View {
                 if u.ipFlagged {
                     tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
                 }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // 点卡收起/展开详情（侧滑不受影响，各走各的手势）
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if expanded { expandedAccounts.remove(u.email) } else { expandedAccounts.insert(u.email) }
             }
         }
         .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
