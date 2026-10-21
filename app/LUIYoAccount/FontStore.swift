@@ -24,11 +24,15 @@ final class FontStore: ObservableObject {
     @Published private(set) var psName: String = ""
     /// 适配系数：自定义字体的字面通常比系统字体大，按 capHeight 比例把字号压回正常观感
     @Published private(set) var factor: CGFloat = 1
+    /// 字距补偿（pt，17pt 基准，≤0）：有的导入字体字面窄、字距天生宽，排出来字与字散开；
+    /// 量出它每个字比系统字体多占的宽度取负，套字体时用 tracking 收回来
+    @Published private(set) var trackingCompensation: CGFloat = 0
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
         psName = saved
         factor = Self.computeFactor(psName: saved)
+        trackingCompensation = Self.computeTrackingCompensation(psName: saved)
         refresh()
     }
 
@@ -50,6 +54,7 @@ final class FontStore: ObservableObject {
         psName = name
         UserDefaults.standard.set(name, forKey: Self.defaultsKey)
         factor = Self.computeFactor(psName: name)
+        trackingCompensation = Self.computeTrackingCompensation(psName: name)
         Self.applyUIKitAppearances()
     }
 
@@ -60,6 +65,42 @@ final class FontStore: ObservableObject {
         guard custom.capHeight > 0 else { return 1 }
         let raw = sys.capHeight / custom.capHeight
         return min(1.05, max(0.6, raw))
+    }
+
+    /// 字距补偿 = −（自定义字体每字平均宽度 − 系统字体每字平均宽度），17pt 下量样例 CJK 字串，夹在 [−3, 0]
+    static func computeTrackingCompensation(psName: String) -> CGFloat {
+        guard !psName.isEmpty, let custom = UIFont(name: psName, size: 17) else { return 0 }
+        let sample = "永永永永永"
+        let cw = (sample as NSString).size(withAttributes: [.font: custom]).width
+        let sw = (sample as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 17)]).width
+        let n = CGFloat(sample.count)
+        guard n > 0, cw > 0 else { return 0 }
+        let delta = (cw - sw) / n
+        return min(0, max(-3, -delta))
+    }
+
+    /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放）
+    func scaledTracking(for style: Font.TextStyle) -> CGFloat {
+        guard !psName.isEmpty else { return 0 }
+        return trackingCompensation * (Self.baseSize(for: style) * factor) / 17
+    }
+
+    /// 指定字号版的字距补偿
+    func scaledTracking(forSize size: CGFloat) -> CGFloat {
+        guard !psName.isEmpty else { return 0 }
+        return trackingCompensation * (size * factor) / 17
+    }
+
+    /// 指定字号的字体出口（PillSegmented 的 12.5pt 标签等非语义字号用）
+    func font(size: CGFloat, weight: Font.Weight? = nil) -> Font {
+        if psName.isEmpty {
+            var f = Font.system(size: size)
+            if let w = weight { f = f.weight(w) }
+            return f
+        }
+        var f = Font.custom(psName, size: size * factor)
+        if let w = weight { f = f.weight(w) }
+        return f
     }
 
     /// 语义样式对应的标准字号（Dynamic Type 默认档）
@@ -99,29 +140,21 @@ final class FontStore: ObservableObject {
         UIFont(name: psName, size: size * computeFactor(psName: psName))
     }
 
-    /// 把 UIKit 控件外观刷成当前字体：导航栏标题（17/34 × factor）、
-    /// 分段切换（15 × factor，比正文小一号，白边看着才正常）、标签栏小字（10 × factor）
+    /// 把 UIKit 控件外观刷成当前字体：导航栏标题（17/34 × factor）、标签栏小字（10 × factor）。
+    /// 系统分段切换已全部换成 SwiftUI 的 PillSegmented 复刻（标签走 font(size:)），不再有 UISegmentedControl 外观
     static func applyUIKitAppearances() {
         let ps = shared.psName
         let bar = UINavigationBar.appearance()
-        let seg = UISegmentedControl.appearance()
         let tabItem = UITabBarItem.appearance()
         if ps.isEmpty {
             bar.titleTextAttributes = nil
             bar.largeTitleTextAttributes = nil
-            seg.setTitleTextAttributes(nil, for: .normal)
-            seg.setTitleTextAttributes(nil, for: .selected)
             tabItem.setTitleTextAttributes(nil, for: .normal)
             tabItem.setTitleTextAttributes(nil, for: .selected)
             return
         }
         if let t = uiFont(psName: ps, size: 17) { bar.titleTextAttributes = [.font: t] }
         if let lt = uiFont(psName: ps, size: 34) { bar.largeTitleTextAttributes = [.font: lt] }
-        if let sf = uiFont(psName: ps, size: 15) {
-            let attrs: [NSAttributedString.Key: Any] = [.font: sf]
-            seg.setTitleTextAttributes(attrs, for: .normal)
-            seg.setTitleTextAttributes(attrs, for: .selected)
-        }
         if let tf = uiFont(psName: ps, size: 10) {
             let attrs: [NSAttributedString.Key: Any] = [.font: tf]
             tabItem.setTitleTextAttributes(attrs, for: .normal)
@@ -206,6 +239,43 @@ struct GlobalFontModifier: ViewModifier {
     }
 }
 
+/// 全 App 统一的文字出口（Modifier 版，替代散落的 .appFont(...))：
+/// 字体走 FontStore，同时按字距补偿收紧自定义字体的散字距
+struct AppFontModifier: ViewModifier {
+    @EnvironmentObject var fontStore: FontStore
+    let style: Font.TextStyle
+    let weight: Font.Weight?
+    let design: Font.Design
+    func body(content: Content) -> some View {
+        content
+            .appFont(style, weight: weight, design: design)
+            .tracking(fontStore.scaledTracking(for: style))
+    }
+}
+
+/// 指定字号版（PillSegmented 的 12.5pt 标签等）
+struct AppSizedFontModifier: ViewModifier {
+    @EnvironmentObject var fontStore: FontStore
+    let size: CGFloat
+    let weight: Font.Weight?
+    func body(content: Content) -> some View {
+        content
+            .appFont(size: size, weight: weight)
+            .tracking(fontStore.scaledTracking(forSize: size))
+    }
+}
+
+extension View {
+    /// 语义样式：字体 + 字距补偿一步到位
+    func appFont(_ style: Font.TextStyle, weight: Font.Weight? = nil, design: Font.Design = .default) -> some View {
+        modifier(AppFontModifier(style: style, weight: weight, design: design))
+    }
+    /// 指定字号：字体 + 字距补偿一步到位
+    func appFont(size: CGFloat, weight: Font.Weight? = nil) -> some View {
+        modifier(AppSizedFontModifier(size: size, weight: weight))
+    }
+}
+
 /// 分组标题：显式走 fontStore，自定义字体时不再漏掉 Section 标题
 struct AppSectionHeader: View {
     @EnvironmentObject var fontStore: FontStore
@@ -213,7 +283,7 @@ struct AppSectionHeader: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text)
-            .font(fontStore.font(.footnote))
+            .appFont(.footnote)
             .foregroundColor(.secondary)
     }
 }

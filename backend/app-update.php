@@ -131,6 +131,81 @@ function ipa_version_build($path) {
     return [$v, $b];
 }
 
+// ---- 版本注册表（updates/versions.json：每个发布过的版本一行：状态 + 弹窗文案） ----
+// 状态：normal 正常 / soft 弹更新（可无视） / banned 禁用（必须退 App）
+// 非 normal 的状态会同步进 latest.json 的 version_states，主 App 直接读 latest.json 就能执行
+function versions_path() { return UPD_DIR . '/versions.json'; }
+
+function default_popup($version) {
+    return [
+        'title' => '请尽快更新' . $version . '版本',
+        'l2'    => '如您不更新我将禁用此版本',
+        'l3'    => 'LUIYo ' . $version . '版本已更新请您尽快更新',
+    ];
+}
+
+function make_version_entry($version, $build, $notes, $publishedAt = null) {
+    $p = default_popup($version);
+    return [
+        'version'      => (string)$version,
+        'build'        => (string)$build,
+        'notes'        => (string)$notes,
+        'published_at' => $publishedAt ?? time(),
+        'state'        => 'normal',
+        'title'        => $p['title'],
+        'l2'           => $p['l2'],
+        'l3'           => $p['l3'],
+    ];
+}
+
+function load_versions() {
+    $f = versions_path();
+    if (is_file($f)) {
+        $j = json_decode(file_get_contents($f), true);
+        if (is_array($j)) return $j;
+    }
+    // 还没有注册表：用当前 latest.json 生成一条种子记录
+    $meta = UPD_DIR . '/latest.json';
+    if (is_file($meta)) {
+        $j = json_decode(file_get_contents($meta), true);
+        if (is_array($j) && preg_match('/^v(.+)-b([0-9]+)$/', $j['tag_name'] ?? '', $m)) {
+            return [make_version_entry($m[1], $m[2], $j['body'] ?? '', filemtime($meta) ?: time())];
+        }
+    }
+    return [];
+}
+
+function save_versions($versions) {
+    if (!is_dir(UPD_DIR)) mkdir(UPD_DIR, 0755, true);
+    $tmp = versions_path() . '.tmp';
+    file_put_contents($tmp, json_encode($versions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX);
+    rename($tmp, versions_path());
+}
+
+// 把非 normal 的版本状态同步进 latest.json 的 version_states（其余字段原样保留；没有非 normal 时删掉这个键）
+function sync_version_states($versions) {
+    $meta = UPD_DIR . '/latest.json';
+    if (!is_file($meta)) return;
+    $j = json_decode(file_get_contents($meta), true);
+    if (!is_array($j)) return;
+    $map = [];
+    foreach ($versions as $v) {
+        $st = $v['state'] ?? 'normal';
+        if ($st !== 'normal' && !empty($v['build'])) {
+            $map[(string)$v['build']] = [
+                'state' => $st,
+                'title' => $v['title'] ?? '',
+                'l2'    => $v['l2'] ?? '',
+                'l3'    => $v['l3'] ?? '',
+            ];
+        }
+    }
+    if ($map) $j['version_states'] = $map; else unset($j['version_states']);
+    $tmp = $meta . '.tmp';
+    file_put_contents($tmp, json_encode($j, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX);
+    rename($tmp, $meta);
+}
+
 $action = $_GET['action'] ?? '';
 
 if ($action === 'current') {
@@ -204,6 +279,9 @@ if ($action === 'upload_ipa') {
     $sha = hash_file('sha256', $dest);
     $url = public_base() . '/' . $name;
 
+    // 先读版本注册表（缺失时用旧 latest.json 做种子，必须赶在 latest.json 被覆盖之前）
+    $versions = load_versions();
+
     $latest = [
         'tag_name' => 'v' . $version . '-b' . $build,
         'draft' => false,
@@ -221,8 +299,44 @@ if ($action === 'upload_ipa') {
     file_put_contents($metaTmp, $json, LOCK_EX);
     rename($metaTmp, UPD_DIR . '/latest.json');
 
+    // 新版本登记进注册表（置顶，状态 normal + 默认弹窗文案），再把已有版本的状态同步回新 latest.json
+    array_unshift($versions, make_version_entry($version, $build, $notes));
+    save_versions($versions);
+    sync_version_states($versions);
+
     out(['ok' => true, 'name' => $name, 'version' => $version, 'build' => $build,
          'size' => $size, 'sha256' => $sha, 'url' => $url, 'latest' => $latest]);
+}
+
+// ---- 版本管理（需管理员密码，JSON body，与账号 App 的 postUpdate 对应） ----
+if ($action === 'versions_list' || $action === 'version_set') {
+    $raw = json_decode(file_get_contents('php://input'), true);
+    $in = is_array($raw) ? $raw : $_POST;
+    if (!admin_authed($in['password'] ?? '')) out(['ok' => false, 'error' => '密码验证失败'], 401);
+    $versions = load_versions();
+    if ($action === 'versions_list') {
+        out(['ok' => true, 'versions' => $versions]);
+    }
+    // version_set：按 build 定位，只改传了的字段（状态 / 标题 / 第二行 / 第三行）
+    $build = trim((string)($in['build'] ?? ''));
+    if ($build === '') out(['ok' => false, 'error' => '缺少 build 参数']);
+    $found = false;
+    foreach ($versions as $i => $v) {
+        if ((string)($v['build'] ?? '') === $build) {
+            if (isset($in['state']) && in_array($in['state'], ['normal', 'soft', 'banned'], true)) {
+                $versions[$i]['state'] = $in['state'];
+            }
+            foreach (['title', 'l2', 'l3'] as $k) {
+                if (array_key_exists($k, $in)) $versions[$i][$k] = (string)$in[$k];
+            }
+            $found = true;
+            break;
+        }
+    }
+    if (!$found) out(['ok' => false, 'error' => '找不到构建号 ' . $build . ' 的版本记录']);
+    save_versions($versions);
+    sync_version_states($versions);
+    out(['ok' => true, 'versions' => $versions]);
 }
 
 out(['ok' => false, 'error' => '未知 action'], 400);

@@ -20,10 +20,10 @@ struct MailLogView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(m.toEmail)
-                                    .font(fontStore.font(.subheadline, weight: .bold))
+                                    .appFont(.subheadline, weight: .bold)
                                 Spacer()
                                 Text(m.ok ? "发送成功" : "发送失败")
-                                    .font(fontStore.font(.caption, weight: .bold))
+                                    .appFont(.caption, weight: .bold)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)
                                     .background(m.ok ? Color.green : Color.red)
@@ -32,14 +32,14 @@ struct MailLogView: View {
                             }
                             if !m.subject.isEmpty {
                                 Text(m.subject)
-                                    .font(fontStore.font(.caption))
+                                    .appFont(.caption)
                                     .foregroundColor(.secondary)
                             }
                             Text(m.createdText)
-                                .font(fontStore.font(.caption2))
+                                .appFont(.caption2)
                                 .foregroundColor(.secondary)
                         }
-                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
                     }
                 }
             }

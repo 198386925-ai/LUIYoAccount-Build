@@ -61,7 +61,7 @@ struct SettingsView: View {
                         }
                     }
                     Text("选中后立即全局生效，标题和正文都会换成该字体；少数系统控件可能仍用系统字体。导入的字体向左滑可删除，存本机、重启也在。")
-                        .font(fontStore.font(.footnote))
+                        .appFont(.footnote)
                         .foregroundColor(.secondary)
                 } header: {
                     AppSectionHeader("全局字体")
@@ -86,7 +86,7 @@ struct SettingsView: View {
                 }
                 Section {
                     Text("退出后下次打开需要重新输入管理员密码。账号、卡密、应用更新三个页面共用这一个密码。")
-                        .font(fontStore.font(.footnote))
+                        .appFont(.footnote)
                         .foregroundColor(.secondary)
                 }
             }

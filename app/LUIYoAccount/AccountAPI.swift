@@ -54,9 +54,12 @@ class AccountAPI: ObservableObject {
         return list
     }
 
-    func accountBan(email: String, ban: Bool, reason: String = "") async throws {
+    func accountBan(email: String, ban: Bool, reason: String = "", title: String? = nil, subtitle: String? = nil) async throws {
         var p = ["email": email, "ban": ban ? "1" : "0"]
         if !reason.isEmpty { p["reason"] = reason }
+        // title/subtitle 只在调用方明确给出时才带（后端按「带了才存」，行内封禁不会冲掉表单填的文案）
+        if let title { p["title"] = title }
+        if let subtitle { p["subtitle"] = subtitle }
         let r: SimpleResp = try await post(action: "admin_ban", params: p)
         guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
     }
@@ -158,12 +161,39 @@ class AccountAPI: ObservableObject {
         return r
     }
 
+    // MARK: - 版本管理（app-update.php versions_list / version_set）
+
+    func versionsList() async throws -> [VersionEntry] {
+        let r: VersionsResp = try await postUpdate(action: "versions_list", params: [:])
+        guard r.ok, let list = r.versions else { throw APIError.server(r.error ?? "获取失败") }
+        return list
+    }
+
+    func versionSet(build: String, state: String? = nil, title: String? = nil, l2: String? = nil, l3: String? = nil) async throws -> [VersionEntry] {
+        var p = ["build": build]
+        if let state { p["state"] = state }
+        if let title { p["title"] = title }
+        if let l2 { p["l2"] = l2 }
+        if let l3 { p["l3"] = l3 }
+        let r: VersionsResp = try await postUpdate(action: "version_set", params: p)
+        guard r.ok, let list = r.versions else { throw APIError.server(r.error ?? "操作失败") }
+        return list
+    }
+
     // MARK: - 底层（JSON POST，密码放 body，与 PHP admin_authed 对应）
 
     private func post<T: Decodable>(action: String, params: [String: String], password: String? = nil) async throws -> T {
+        try await post(file: "user-auth-v2.php", action: action, params: params, password: password)
+    }
+
+    private func postUpdate<T: Decodable>(action: String, params: [String: String]) async throws -> T {
+        try await post(file: "app-update.php", action: action, params: params, password: nil)
+    }
+
+    private func post<T: Decodable>(file: String, action: String, params: [String: String], password: String?) async throws -> T {
         let pw = password ?? Keychain.load() ?? ""
         guard !pw.isEmpty else { throw APIError.server("未保存密码，请重新登录") }
-        guard let url = URL(string: Self.accountBase + "/user-auth-v2.php?action=" + action) else {
+        guard let url = URL(string: Self.accountBase + "/" + file + "?action=" + action) else {
             throw APIError.server("服务器地址无效")
         }
         var all = params

@@ -7,7 +7,7 @@ struct CardsView: View {
     @EnvironmentObject var fontStore: FontStore
     @State private var cards: [CardItem] = []
     @State private var countText = "10"
-    @State private var days = 30
+    @State private var daysValue = "30"
     @State private var cardFilter: CardFilter = .all
     @State private var remarkText = ""
     @State private var deleteTarget: CardItem?
@@ -22,14 +22,11 @@ struct CardsView: View {
         NavigationView {
             Form {
                 Section {
-                    Picker("分类", selection: $cardFilter) {
-                        ForEach(CardFilter.allCases, id: \.self) { f in
-                            Text(f.rawValue).tag(f)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    PillSegmented(options: [("all", "全部"), ("used", "已使用"), ("unused", "未使用")],
+                                  selection: cardFilterBinding)
                 }
                 .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                .listRowBackground(Color.clear)
 
                 Section {
                     HStack {
@@ -40,17 +37,12 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
                     }
-                    HStack {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("SVIP 天数")
-                        Spacer()
-                        Picker("SVIP 天数", selection: $days) {
-                            ForEach(dayOptions, id: \.self) { d in
-                                Text(d >= 36500 ? "永久" : "\(d) 天").tag(d)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
+                        PillSegmented(options: [("30", "30天"), ("90", "90天"), ("180", "180天"), ("365", "365天"), ("36500", "永久")],
+                                      selection: $daysValue)
                     }
+                    .padding(.vertical, 2)
                     HStack {
                         Text("备注")
                         Spacer()
@@ -68,7 +60,7 @@ struct CardsView: View {
                     }
                     .disabled(generating)
                     Text("格式：LUI-备注-随机码（备注可空）。天数从上面选，选「永久」就是永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
-                        .font(fontStore.font(.footnote))
+                        .appFont(.footnote)
                         .foregroundColor(.secondary)
                 } header: {
                     AppSectionHeader("生成卡密")
@@ -85,10 +77,10 @@ struct CardsView: View {
                         ForEach(newCodes, id: \.self) { code in
                             HStack {
                                 Text(code)
-                                    .font(fontStore.font(.footnote, design: .monospaced))
+                                    .appFont(.footnote, design: .monospaced)
                                 Spacer()
                                 Button("复制") { UIPasteboard.general.string = code }
-                                    .font(fontStore.font(.footnote))
+                                    .appFont(.footnote)
                             }
                             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         }
@@ -120,10 +112,10 @@ struct CardsView: View {
                                 .foregroundColor(.red)
                             Spacer()
                             Text("\(unusedCards.count) 张")
-                                .font(fontStore.font(.caption))
+                                .appFont(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        .font(fontStore.font(.footnote))
+                        .appFont(.footnote)
                         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     }
                     if unusedCards.isEmpty {
@@ -183,42 +175,62 @@ struct CardsView: View {
         case all = "全部"
         case used = "已使用"
         case unused = "未使用"
+
+        var key: String {
+            switch self {
+            case .all: return "all"
+            case .used: return "used"
+            case .unused: return "unused"
+            }
+        }
+        init?(key: String) {
+            switch key {
+            case "all": self = .all
+            case "used": self = .used
+            case "unused": self = .unused
+            default: return nil
+            }
+        }
     }
 
-    private let dayOptions = [30, 90, 180, 365, 36500]
+    private var cardFilterBinding: Binding<String> {
+        Binding(get: { cardFilter.key }, set: { cardFilter = CardFilter(key: $0) ?? .all })
+    }
+
+    private var days: Int { Int(daysValue) ?? 30 }
 
     private func usedRow(_ card: CardItem) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(card.code)
-                    .font(fontStore.font(.footnote, design: .monospaced))
+                    .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
             }
             if !card.remark.isEmpty {
                 Text("备注：" + card.remark)
-                    .font(fontStore.font(.caption, weight: .medium))
+                    .appFont(.caption, weight: .medium)
             }
             Text("账号：" + card.boundEmail)
-                .font(fontStore.font(.caption))
+                .appFont(.caption)
                 .foregroundColor(.green)
                 .lineLimit(1)
             if !card.boundUdid.isEmpty {
                 Text("UDID：" + card.boundUdid)
-                    .font(fontStore.font(.caption2, design: .monospaced))
+                    .appFont(.caption2, design: .monospaced)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             } else {
                 Text("UDID：未获取")
-                    .font(fontStore.font(.caption))
+                    .appFont(.caption)
                     .foregroundColor(.secondary)
             }
             Text("时长 " + card.daysText + " · 生成于 " + card.createdText)
-                .font(fontStore.font(.caption))
+                .appFont(.caption)
                 .foregroundColor(.secondary)
             if card.boundAt > 0 {
                 Text("绑定时间：" + card.boundAtText)
-                    .font(fontStore.font(.caption))
+                    .appFont(.caption)
                     .foregroundColor(.secondary)
             }
         }
@@ -249,16 +261,16 @@ struct CardsView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(card.code)
-                    .font(fontStore.font(.footnote, design: .monospaced))
+                    .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
             }
             if !card.remark.isEmpty {
                 Text("备注：" + card.remark)
-                    .font(fontStore.font(.caption, weight: .medium))
+                    .appFont(.caption, weight: .medium)
             }
             Text(detailLine(card))
-                .font(fontStore.font(.caption))
+                .appFont(.caption)
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 1)
@@ -320,7 +332,7 @@ struct CardsView: View {
             ? ("已作废", .red)
             : (card.isBound ? ("已绑定", .green) : ("未使用", .gray))
         return Text(text)
-            .font(fontStore.font(.caption2))
+            .appFont(.caption2)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(color.opacity(0.15))

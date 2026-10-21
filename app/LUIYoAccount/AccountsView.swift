@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 /// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
-/// + 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红
+/// + 分类下方「封禁」表单（账号/标题/副标题/原因，被封用户在主 App 看到的就是这套文案）
+/// + 「已封禁」列表 / 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红 / 复制账号
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -13,11 +15,36 @@ struct AccountsView: View {
     @State private var banTarget: AccountUser?
     @State private var banReason = ""
     @State private var filter: AccountFilter = .all
+    // 封禁表单（分类切换正下方）
+    @State private var banEmail = ""
+    @State private var banFormTitle = ""
+    @State private var banFormSubtitle = ""
+    @State private var banFormReason = ""
 
     enum AccountFilter: String, CaseIterable {
         case all = "全部"
         case svip = "已授权"
         case free = "未授权"
+
+        var key: String {
+            switch self {
+            case .all: return "all"
+            case .svip: return "svip"
+            case .free: return "free"
+            }
+        }
+        init?(key: String) {
+            switch key {
+            case "all": self = .all
+            case "svip": self = .svip
+            case "free": self = .free
+            default: return nil
+            }
+        }
+    }
+
+    private var filterBinding: Binding<String> {
+        Binding(get: { filter.key }, set: { filter = AccountFilter(key: $0) ?? .all })
     }
 
     var filtered: [AccountUser] {
@@ -28,28 +55,31 @@ struct AccountsView: View {
 
     private var svipAccounts: [AccountUser] { filtered.filter { $0.svip } }
     private var freeAccounts: [AccountUser] { filtered.filter { !$0.svip } }
+    private var bannedAccounts: [AccountUser] { list.filter { $0.isBanned } }
 
     var body: some View {
         NavigationView {
             Group {
                 if loading && list.isEmpty {
                     ProgressView()
-                } else if list.isEmpty {
-                    Text("暂无账号（确认新后端已部署到 luioe.bbroot.com）")
-                        .font(fontStore.font(.body))
-                        .foregroundColor(.secondary)
-                        .padding()
                 } else {
                     Form {
                         Section {
-                            Picker("分类", selection: $filter) {
-                                ForEach(AccountFilter.allCases, id: \.self) { f in
-                                    Text(f.rawValue).tag(f)
-                                }
-                            }
-                            .pickerStyle(.segmented)
+                            PillSegmented(options: [("all", "全部"), ("svip", "已授权"), ("free", "未授权")],
+                                          selection: filterBinding)
                         }
                         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        .listRowBackground(Color.clear)
+
+                        banFormSection
+
+                        if !bannedAccounts.isEmpty {
+                            Section {
+                                ForEach(bannedAccounts) { u in bannedRow(u) }
+                            } header: {
+                                AppSectionHeader("已封禁（\(bannedAccounts.count)）")
+                            }
+                        }
 
                         switch filter {
                         case .all:
@@ -121,11 +151,94 @@ struct AccountsView: View {
         }
     }
 
+    // MARK: - 封禁表单（账号 / 标题 / 副标题 / 原因）
+
+    private var banFormSection: some View {
+        Section {
+            banField("账号", placeholder: "填要封禁的邮箱", text: $banEmail, keyboard: .emailAddress)
+            banField("标题", placeholder: "如：账号已被封禁", text: $banFormTitle)
+            banField("副标题", placeholder: "如：你的账号已被停用", text: $banFormSubtitle)
+            banField("原因", placeholder: "如：多次违规使用", text: $banFormReason)
+            Button {
+                submitBanForm()
+            } label: {
+                Text("封禁")
+                    .appFont(.body, weight: .semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(banEmail.trimmingCharacters(in: .whitespaces).isEmpty)
+        } header: {
+            AppSectionHeader("封禁")
+        }
+    }
+
+    private func banField(_ label: String, placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .appFont(.body)
+                .frame(width: 52, alignment: .leading)
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+        }
+    }
+
+    private func submitBanForm() {
+        let email = banEmail.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !email.isEmpty else { return }
+        let t = banFormTitle, s = banFormSubtitle, r = banFormReason
+        run {
+            try await api.accountBan(email: email, ban: true, reason: r, title: t, subtitle: s)
+            banEmail = ""; banFormTitle = ""; banFormSubtitle = ""; banFormReason = ""
+        }
+    }
+
+    // MARK: - 已封禁行
+
+    private func bannedRow(_ u: AccountUser) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(u.email)
+                    .appFont(.headline)
+                    .lineLimit(1)
+                Spacer()
+                tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
+            }
+            Text(banMeta(u))
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+        }
+        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
+        .swipeActions(edge: .trailing) {
+            Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
+                .tint(.green)
+            Button("复制账号") {
+                UIPasteboard.general.string = u.email
+                notice = "已复制账号"
+            }
+            .tint(.indigo)
+        }
+    }
+
+    private func banMeta(_ u: AccountUser) -> String {
+        var parts: [String] = []
+        if !u.banTitle.isEmpty { parts.append("标题：" + u.banTitle) }
+        if !u.banSubtitle.isEmpty { parts.append("副标题：" + u.banSubtitle) }
+        if !u.banReason.isEmpty { parts.append("原因：" + u.banReason) }
+        return parts.isEmpty ? "未填弹窗文案" : parts.joined(separator: " · ")
+    }
+
+    // MARK: - 账号行
+
     private func accountRow(_ u: AccountUser) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(u.email)
-                    .font(fontStore.font(.headline))
+                    .appFont(.headline)
                     .lineLimit(1)
                 Spacer()
                 if u.isBanned {
@@ -141,7 +254,7 @@ struct AccountsView: View {
             }
             if u.isBanned && !u.banReason.isEmpty {
                 Text("封禁理由：" + u.banReason)
-                    .font(fontStore.font(.caption))
+                    .appFont(.caption)
                     .foregroundColor(.red)
             }
             HStack {
@@ -149,11 +262,11 @@ struct AccountsView: View {
                 Text("·")
                 Text("最后登录 " + u.lastLoginText)
             }
-            .font(fontStore.font(.caption))
+            .appFont(.caption)
             .foregroundColor(.secondary)
             if !u.udid.isEmpty {
                 Text("UDID " + u.udid)
-                    .font(fontStore.font(.caption2, design: .monospaced))
+                    .appFont(.caption2, design: .monospaced)
                     .foregroundColor(.secondary)
                     .textSelection(.enabled)
             }
@@ -164,10 +277,10 @@ struct AccountsView: View {
                     Text("SVIP 到期 " + u.svipExpiresText)
                 }
             }
-            .font(fontStore.font(.caption))
+            .appFont(.caption)
             .foregroundColor(.secondary)
         }
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
         .swipeActions(edge: .trailing) {
             if u.isBanned {
                 Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
@@ -187,12 +300,17 @@ struct AccountsView: View {
                 Button("取消标红") { run { try await api.accountUnflag(email: u.email) } }
                     .tint(.orange)
             }
+            Button("复制账号") {
+                UIPasteboard.general.string = u.email
+                notice = "已复制账号"
+            }
+            .tint(.indigo)
         }
     }
 
     private func tag(_ s: String, bg: Color, fg: Color) -> some View {
         Text(s)
-            .font(fontStore.font(.caption))
+            .appFont(.caption)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(bg)
             .foregroundColor(fg)

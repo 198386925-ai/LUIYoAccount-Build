@@ -103,6 +103,8 @@ foreach ([
     'ip_flagged'     => "ALTER TABLE users ADD COLUMN ip_flagged INTEGER DEFAULT 0",
     'allow_jailbreak'=> "ALTER TABLE users ADD COLUMN allow_jailbreak INTEGER DEFAULT 0",
     'udid'           => "ALTER TABLE users ADD COLUMN udid TEXT DEFAULT ''",
+    'ban_title'      => "ALTER TABLE users ADD COLUMN ban_title TEXT DEFAULT ''",
+    'ban_subtitle'   => "ALTER TABLE users ADD COLUMN ban_subtitle TEXT DEFAULT ''",
 ] as $c => $sql) if (!in_array($c, $cols)) $db->exec($sql);
 $db->exec("CREATE TABLE IF NOT EXISTS udid_enroll (
     token TEXT PRIMARY KEY,
@@ -356,7 +358,9 @@ if ($action === 'login') {
         $db->prepare("UPDATE users SET failed_count=? WHERE id=?")->execute([$fails, $u['id']]);
         resp(false, ['error' => '密码不对（还剩' . (5 - $fails) . '次）']);
     }
-    if ($u['is_banned']) resp(false, ['error' => '账号已被封禁' . ($u['ban_reason'] ? '：' . $u['ban_reason'] : '')]);
+    if ($u['is_banned']) resp(false, ['error' => '账号已被封禁' . ($u['ban_reason'] ? '：' . $u['ban_reason'] : ''),
+        'banned' => true,
+        'ban_title' => $u['ban_title'] ?? '', 'ban_subtitle' => $u['ban_subtitle'] ?? '', 'ban_reason' => $u['ban_reason'] ?? '']);
     // 安全5：越狱检测（按账号单独开关）
     if ($jailbroken && empty($u['allow_jailbreak'])) {
         resp(false, ['error' => '检测到越狱设备，该账号未开通越狱使用权限', 'jailbreak_denied' => true]);
@@ -472,7 +476,8 @@ if ($action === 'status') {
     $st->execute([$token]);
     $u = $st->fetch(PDO::FETCH_ASSOC);
     if (!$u) resp(false, ['error' => '未登录', 'logged_out' => true]);
-    if ($u['is_banned']) resp(true, ['banned' => true, 'reason' => $u['ban_reason']]);
+    if ($u['is_banned']) resp(true, ['banned' => true, 'reason' => $u['ban_reason'],
+        'ban_title' => $u['ban_title'] ?? '', 'ban_subtitle' => $u['ban_subtitle'] ?? '', 'ban_reason' => $u['ban_reason'] ?? '']);
     $svip = $u['svip_expires_at'] > $now;
     resp(true, ['email' => $u['email'], 'svip' => $svip, 'svip_expires_at' => (int)$u['svip_expires_at'], 'banned' => false, 'udid' => $u['udid'] ?? '']);
 }
@@ -481,7 +486,7 @@ if ($action === 'status') {
 if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unflag', 'admin_gen_cards', 'admin_list_cards', 'admin_disable_card', 'admin_delete_card', 'admin_mail_log'], true)) {
     if (!admin_authed($in)) { http_response_code(401); resp(false, ['error' => '未授权']); }
     if ($action === 'admin_list') {
-        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
+        $st = $db->query("SELECT id,email,is_verified,is_banned,ban_reason,ban_title,ban_subtitle,svip_expires_at,ip_flagged,allow_jailbreak,udid,created_at,last_login_at FROM users ORDER BY id DESC LIMIT 200");
         $list = [];
         while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $r['svip'] = $r['svip_expires_at'] > $now; $list[] = $r; }
         resp(true, ['users' => $list, 'total' => count($list)]);
@@ -495,7 +500,13 @@ if (in_array($action, ['admin_list', 'admin_ban', 'admin_jailbreak', 'admin_unfl
     $email = strtolower(trim($in['email'] ?? ''));
     if ($action === 'admin_ban') {
         $ban = (int)($in['ban'] ?? 1); $reason = trim($in['reason'] ?? '');
-        $db->prepare("UPDATE users SET is_banned=?, ban_reason=? WHERE email=?")->execute([$ban, $reason, $email]);
+        // 标题/副标题是封禁弹窗的文案：请求里带了才存（行内封禁不带，不会冲掉表单里填过的文案）
+        $sets = "is_banned=?, ban_reason=?";
+        $args = [$ban, $reason];
+        if (array_key_exists('title', $in)) { $sets .= ", ban_title=?"; $args[] = trim((string)$in['title']); }
+        if (array_key_exists('subtitle', $in)) { $sets .= ", ban_subtitle=?"; $args[] = trim((string)$in['subtitle']); }
+        $args[] = $email;
+        $db->prepare("UPDATE users SET $sets WHERE email=?")->execute($args);
         resp(true, ['msg' => $ban ? '已封禁' : '已解封']);
     }
     if ($action === 'admin_jailbreak') {

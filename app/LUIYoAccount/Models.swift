@@ -6,6 +6,8 @@ struct AccountUser: Decodable, Identifiable {
     let email: String
     let isBanned: Bool
     let banReason: String
+    let banTitle: String
+    let banSubtitle: String
     let svip: Bool
     let svipExpiresAt: Int
     let ipFlagged: Bool
@@ -18,6 +20,8 @@ struct AccountUser: Decodable, Identifiable {
         case id, email, svip
         case isBanned = "is_banned"
         case banReason = "ban_reason"
+        case banTitle = "ban_title"
+        case banSubtitle = "ban_subtitle"
         case svipExpiresAt = "svip_expires_at"
         case ipFlagged = "ip_flagged"
         case udid
@@ -33,6 +37,8 @@ struct AccountUser: Decodable, Identifiable {
         email = (try? c.decode(String.self, forKey: .email)) ?? ""
         isBanned = Self.flexBool(c, .isBanned)
         banReason = (try? c.decode(String.self, forKey: .banReason)) ?? ""
+        banTitle = (try? c.decode(String.self, forKey: .banTitle)) ?? ""
+        banSubtitle = (try? c.decode(String.self, forKey: .banSubtitle)) ?? ""
         svip = Self.flexBool(c, .svip)
         svipExpiresAt = (try? c.decode(Int.self, forKey: .svipExpiresAt)) ?? 0
         ipFlagged = Self.flexBool(c, .ipFlagged)
@@ -108,6 +114,57 @@ struct UploadResp: Decodable {
     let ok: Bool
     let error: String?
     let name: String?
+}
+
+// MARK: - 版本管理（app-update.php versions.json 注册表）
+struct VersionEntry: Decodable, Identifiable {
+    let version: String
+    let build: String
+    let notes: String
+    let publishedAt: Int
+    let state: String   // normal / soft（弹更新） / banned（禁用）
+    let title: String
+    let l2: String
+    let l3: String
+
+    var id: String { build }
+
+    enum CodingKeys: String, CodingKey {
+        case version, build, notes, state, title, l2, l3
+        case publishedAt = "published_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = (try? c.decode(String.self, forKey: .version)) ?? ""
+        if let s = try? c.decode(String.self, forKey: .build) { build = s }
+        else if let i = try? c.decode(Int.self, forKey: .build) { build = String(i) }
+        else { build = "" }
+        notes = (try? c.decode(String.self, forKey: .notes)) ?? ""
+        publishedAt = (try? c.decode(Int.self, forKey: .publishedAt)) ?? 0
+        state = (try? c.decode(String.self, forKey: .state)) ?? "normal"
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        l2 = (try? c.decode(String.self, forKey: .l2)) ?? ""
+        l3 = (try? c.decode(String.self, forKey: .l3)) ?? ""
+    }
+
+    var stateText: String {
+        state == "soft" ? "弹更新中" : (state == "banned" ? "已禁用" : "正常")
+    }
+
+    var publishedText: String {
+        guard publishedAt > 0 else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(publishedAt)))
+    }
+}
+
+struct VersionsResp: Decodable {
+    let ok: Bool
+    let error: String?
+    let versions: [VersionEntry]?
 }
 
 // MARK: - 卡密（licenses，admin_gen_cards / admin_list_cards）
