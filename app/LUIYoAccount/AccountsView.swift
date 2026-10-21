@@ -200,17 +200,17 @@ struct AccountsView: View {
     // MARK: - 已封禁行
 
     private func bannedRow(_ u: AccountUser) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
-                Spacer()
-                tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
+                Text(banMeta(u))
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
             }
-            Text(banMeta(u))
-                .appFont(.caption)
-                .foregroundColor(.secondary)
+            Spacer(minLength: 6)
+            tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
         }
         .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
         .swipeActions(edge: .trailing) {
@@ -235,12 +235,42 @@ struct AccountsView: View {
     // MARK: - 账号行
 
     private func accountRow(_ u: AccountUser) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
-                Spacer()
+                if u.isBanned && !u.banReason.isEmpty {
+                    Text("封禁理由：" + u.banReason)
+                        .appFont(.caption)
+                        .foregroundColor(.red)
+                }
+                HStack {
+                    Text("注册 " + u.createdText)
+                    Text("·")
+                    Text("最后登录 " + u.lastLoginText)
+                }
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+                if !u.udid.isEmpty {
+                    Text("UDID " + u.udid)
+                        .appFont(.caption2, design: .monospaced)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
+                    Spacer()
+                    if u.svip {
+                        Text("SVIP 到期 " + u.svipExpiresText)
+                    }
+                }
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 6)
+            // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）
+            VStack(alignment: .trailing, spacing: 4) {
                 if u.isBanned {
                     tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
                 } else if u.svip {
@@ -252,33 +282,6 @@ struct AccountsView: View {
                     tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
                 }
             }
-            if u.isBanned && !u.banReason.isEmpty {
-                Text("封禁理由：" + u.banReason)
-                    .appFont(.caption)
-                    .foregroundColor(.red)
-            }
-            HStack {
-                Text("注册 " + u.createdText)
-                Text("·")
-                Text("最后登录 " + u.lastLoginText)
-            }
-            .appFont(.caption)
-            .foregroundColor(.secondary)
-            if !u.udid.isEmpty {
-                Text("UDID " + u.udid)
-                    .appFont(.caption2, design: .monospaced)
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
-            }
-            HStack {
-                Text("越狱允许：" + (u.allowJailbreak ? "是" : "否"))
-                Spacer()
-                if u.svip {
-                    Text("SVIP 到期 " + u.svipExpiresText)
-                }
-            }
-            .appFont(.caption)
-            .foregroundColor(.secondary)
         }
         .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
         .swipeActions(edge: .trailing) {

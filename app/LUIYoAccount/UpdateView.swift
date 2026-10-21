@@ -118,22 +118,23 @@ struct UpdateView: View {
     // MARK: - 版本管理（状态侧滑 + 文案编辑）
 
     private func versionRow(_ v: VersionEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("\(v.version) · Build \(v.build)")
                     .appFont(.headline)
-                Spacer()
-                versionChip(v)
-            }
-            Text("发布于 " + v.publishedText)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-            if !v.notes.isEmpty {
-                Text(v.notes)
+                Text("发布于 " + v.publishedText)
                     .appFont(.caption)
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                if !v.notes.isEmpty {
+                    Text(v.notes)
+                        .appFont(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
             }
+            Spacer(minLength: 6)
+            // 状态标识对整行上下居中（不再贴在标题那一行）
+            versionChip(v)
         }
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
         .swipeActions(edge: .trailing) {

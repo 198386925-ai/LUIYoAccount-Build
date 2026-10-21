@@ -1,12 +1,8 @@
 import SwiftUI
-import UIKit
 
-/// 设置：全局字体（可导入自己的字体文件）/ 服务器信息 / 本机版本 / 退出登录
+/// 设置：外观入口（全局字体 + 底栏排序在里面）/ 服务器信息 / 本机版本 / 退出登录
 struct SettingsView: View {
     @EnvironmentObject var api: AccountAPI
-    @EnvironmentObject var fontStore: FontStore
-    @State private var showFontPicker = false
-    @State private var fontError: String?
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -19,52 +15,16 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Section {
-                    Button {
-                        fontStore.select("")
+                    NavigationLink {
+                        AppearanceView()
                     } label: {
-                        HStack {
-                            Text("系统默认")
-                                .foregroundColor(.primary)
-                            Spacer()
-                            if fontStore.psName.isEmpty {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.accentColor)
-                            }
-                        }
+                        Label("外观", systemImage: "paintpalette.fill")
                     }
-                    ForEach(fontStore.fonts) { f in
-                        Button {
-                            fontStore.select(f.psName)
-                        } label: {
-                            HStack {
-                                Text(f.displayName)
-                                    .font(Font.custom(f.psName, size: 17 * FontStore.computeFactor(psName: f.psName)))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                Spacer()
-                                if fontStore.psName == f.psName {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
-                                }
-                            }
-                        }
-                    }
-                    .onDelete { idx in
-                        for i in idx { fontStore.delete(fontStore.fonts[i]) }
-                    }
-                    Button {
-                        showFontPicker = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                            Text("导入字体（ttf / otf / ttc）")
-                        }
-                    }
-                    Text("选中后立即全局生效，标题和正文都会换成该字体；少数系统控件可能仍用系统字体。导入的字体向左滑可删除，存本机、重启也在。")
+                }
+                Section {
+                    Text("全局字体、底栏排序都在外观里。")
                         .appFont(.footnote)
                         .foregroundColor(.secondary)
-                } header: {
-                    AppSectionHeader("全局字体")
                 }
                 Section {
                     LabeledContent("地址", value: "luioe.bbroot.com")
@@ -92,19 +52,6 @@ struct SettingsView: View {
             }
             .compactSectionSpacing()
             .navigationTitle("设置")
-            .sheet(isPresented: $showFontPicker) {
-                FontDocumentPicker { url in
-                    guard let url else { return }
-                    do {
-                        fontStore.select(try fontStore.importFont(from: url))
-                    } catch {
-                        fontError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                    }
-                }
-            }
-            .alert("导入失败", isPresented: .constant(fontError != nil)) {
-                Button("好") { fontError = nil }
-            } message: { Text(fontError ?? "") }
         }
     }
 }

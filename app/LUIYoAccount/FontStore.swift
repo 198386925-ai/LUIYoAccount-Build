@@ -67,7 +67,8 @@ final class FontStore: ObservableObject {
         return min(1.05, max(0.6, raw))
     }
 
-    /// 字距补偿 = −（自定义字体每字平均宽度 − 系统字体每字平均宽度），17pt 下量样例 CJK 字串，夹在 [−3, 0]
+    /// 字距补偿 = −（自定义字体每字平均宽度 − 系统字体每字平均宽度），17pt 下量样例 CJK 字串，夹在 [−8, 0]
+    /// （上限放宽：有的字体每字多占的宽度超过 3pt，卡在 −3 永远收不干净）
     static func computeTrackingCompensation(psName: String) -> CGFloat {
         guard !psName.isEmpty, let custom = UIFont(name: psName, size: 17) else { return 0 }
         let sample = "永永永永永"
@@ -76,19 +77,24 @@ final class FontStore: ObservableObject {
         let n = CGFloat(sample.count)
         guard n > 0, cw > 0 else { return 0 }
         let delta = (cw - sw) / n
-        return min(0, max(-3, -delta))
+        return min(0, max(-8, -delta))
     }
 
-    /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放）
+    /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放；
+    /// 套用时再夹一道：幅度不超过渲染字号的 45%，小字号下也不会把字压叠）
     func scaledTracking(for style: Font.TextStyle) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
-        return trackingCompensation * (Self.baseSize(for: style) * factor) / 17
+        let rendered = Self.baseSize(for: style) * factor
+        let raw = trackingCompensation * rendered / 17
+        return max(raw, -0.45 * rendered)
     }
 
-    /// 指定字号版的字距补偿
+    /// 指定字号版的字距补偿（同样夹 45% 安全线）
     func scaledTracking(forSize size: CGFloat) -> CGFloat {
         guard !psName.isEmpty else { return 0 }
-        return trackingCompensation * (size * factor) / 17
+        let rendered = size * factor
+        let raw = trackingCompensation * rendered / 17
+        return max(raw, -0.45 * rendered)
     }
 
     /// 指定字号的字体出口（PillSegmented 的 12.5pt 标签等非语义字号用）

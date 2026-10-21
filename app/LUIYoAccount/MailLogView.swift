@@ -17,27 +17,28 @@ struct MailLogView: View {
                             .foregroundColor(.secondary)
                     }
                     ForEach(logs) { m in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(m.toEmail)
                                     .appFont(.subheadline, weight: .bold)
-                                Spacer()
-                                Text(m.ok ? "发送成功" : "发送失败")
-                                    .appFont(.caption, weight: .bold)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 2)
-                                    .background(m.ok ? Color.green : Color.red)
-                                    .foregroundColor(.white)
-                                    .clipShape(Capsule())
-                            }
-                            if !m.subject.isEmpty {
-                                Text(m.subject)
-                                    .appFont(.caption)
+                                if !m.subject.isEmpty {
+                                    Text(m.subject)
+                                        .appFont(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Text(m.createdText)
+                                    .appFont(.caption2)
                                     .foregroundColor(.secondary)
                             }
-                            Text(m.createdText)
-                                .appFont(.caption2)
-                                .foregroundColor(.secondary)
+                            Spacer(minLength: 6)
+                            // 发送状态标识对整行上下居中（不再贴在邮箱那一行）
+                            Text(m.ok ? "发送成功" : "发送失败")
+                                .appFont(.caption, weight: .bold)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(m.ok ? Color.green : Color.red)
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
                         }
                         .listRowInsets(EdgeInsets(top: 5, leading: 26, bottom: 5, trailing: 26))
                     }
