@@ -25,7 +25,11 @@ enum BarGroup {
 ///   横移 68pt，出处页变成左腾空处一个独立的系统玻璃圆钮（图标按钮，不是
 ///   选中元素，不带任何高亮），点它回 A 组。两组 footprint 恒定（圆钮区 + 条
 ///   永远占满边距到边距、同高）。页面住在 SwiftUI 的 ZStack 里整屏托管
-///   （访问过才挂载、保活、硬切显隐），搜索是盖在上面的伪页面。
+///   （访问过才挂载、保活），搜索是盖在上面的伪页面。动画只有一个时钟
+///   （swapSpring 0.38/0.86，Build 25）：切页 / 换组时，条目集替换、条横移、
+///   出处圆钮跟随条的左缘、页面缩放过渡全部同 tick 同弹簧驱动——Build 24
+///   三套动画各走各的时钟（条弹簧 / 系统条目动画 / 页面瞬切）、录屏里满是
+///   重影，这版从结构上杜绝。
 /// - iOS 16–25：Build 22 的原生 TabView 降级保留——同样是换组模式（条件 tab 集 +
 ///   拦截式选择绑定，前 3 页 +「更多」/ 出处打头 + 其余页 +「收起」），图标 + 文字，
 ///   含用户自定义模板图（账号 / 生成卡密 / 更多）。
@@ -48,6 +52,9 @@ struct ContentView: View {
     @State private var savedGroup: BarGroup = .a
     @State private var savedOrigin: AppTab = .accounts
     @State private var mountedPages: Set<AppTab> = [.accounts]
+    /// 出处圆钮的不透明度：和条横移、页面过渡同一个弹簧驱动（swapSpring）；
+    /// A 组 = 0（圆钮停在条左缘外的起始位、不可见），B 组 = 1
+    @State private var originOpacity: Double = 0
     /// 底栏量测（由真 UITabBarController 布局后回填，不猜常量）：
     /// 条总高（栏顶到窗口底边）、选中胶囊中心距条底的距离、条跨过的底部
     /// 安全区高度。初值按 iPhone 的常见尺寸给，首帧布局后即被真实量测覆盖
@@ -122,8 +129,9 @@ struct ContentView: View {
 
     // MARK: - iOS 26 原生底栏换组外壳（真 UITabBarController 只供底栏 + 页面 ZStack）
 
-    /// 五个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（opacity 切显隐），
-    /// 各自的导航栈、滚动位置、已加载数据都不丢；搜索以伪页面盖在最上层。
+    /// 五个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（各自的导航栈、
+    /// 滚动位置、已加载数据都不丢），显隐由 PageFocusModifier 的设计过渡承担
+    /// （见下）；搜索以伪页面盖在最上层。
     /// 底栏本体是 NativeTabBarView 包着的真 UITabBarController（见文件末尾）：
     /// 玻璃、选中透镜、果冻滑动、着色全部是系统的，我们一行 appearance 都不碰；
     /// 选中也只有系统那一份——本外壳没有任何自加的高亮层 / 染色（Build 23 的
@@ -135,7 +143,8 @@ struct ContentView: View {
             ForEach(AppTab.allCases) { tab in
                 if mountedPages.contains(tab) {
                     pageView(tab)
-                        .opacity(!searchShown && currentPage == tab ? 1 : 0)
+                        .modifier(PageFocusModifier(focus: currentPage == tab ? 1 : 0))
+                        .zIndex(currentPage == tab ? 1 : 0)
                         .allowsHitTesting(!searchShown && currentPage == tab)
                         .accessibilityHidden(searchShown || currentPage != tab)
                 }
@@ -144,8 +153,6 @@ struct ContentView: View {
                 GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
             }
         }
-        // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
-        .transaction { $0.animation = nil }
         // 搜索胶囊浮在底栏上方 10pt：底边距离 = 页面底部留白 + 10，随底栏量测走
         .environment(\.searchBarBottom, barPageInset + 10)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -163,13 +170,46 @@ struct ContentView: View {
     /// 让出伸进安全区的那截
     private var barPageInset: CGFloat { max(0, barStripHeight - barSafeBottom) }
 
-    /// 禁用动画的事务：切页、换组、开关搜索的逻辑状态变更全部走它——
-    /// 新页同帧全显、旧页同帧全消，两组永不同时在场（底栏条的横移是它自己的
-    /// 布局动画，发生在条那一层，进不了页面 ZStack）
+    /// 全外壳唯一的动画时钟（Build 25 定版）：切页的页面过渡、换组时条的
+    /// 横移与出处圆钮的跟随 / 淡入淡出，全部由这一个弹簧在同一 tick 里
+    /// 驱动。Build 24 的教训是三套动画各走各的时钟（条的横移弹簧、系统
+    /// 底栏自己的条目动画、页面的瞬切），录屏里互相打架全是重影——这版
+    /// 只许这一个节拍，任何切页 / 换组路径都不许再引入别的曲线
+    private let swapSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    /// 禁用动画的事务：只剩排序变化时的状态归一走它——那是设置页里的数据
+    /// 重置，不是一次切页 / 换组，不该带任何动画；切页 / 换组 / 搜索往返
+    /// 的动画全部走 swapSpring
     private var instant: Transaction {
         var t = Transaction()
         t.disablesAnimations = true
         return t
+    }
+
+    /// 页面焦点过渡（Build 25 的设计动作，不是系统默认交叉淡化）：focus 1 =
+    /// 当前页、0 = 非当前页，切页时由 swapSpring 插值 animatableData，
+    /// 每一帧的缩放 / 透明 / 下沉都从 focus 算——进场页缩放 0.96→1、透明
+    /// 0→1、下沉 10pt 归位；离场页缩放只降到 0.985 且透明度取 focus 的
+    /// 1.8 次幂（前段陡降、弹簧中途就已淡没）。两页永远不会同时以高透明
+    /// 度在场：Build 24 的标题重影就是两页同帧全显，这版从曲线上杜绝
+    private struct PageFocusModifier: ViewModifier, Animatable {
+        var focus: Double
+        var animatableData: Double {
+            get { focus }
+            set { focus = newValue }
+        }
+        func body(content: Content) -> some View {
+            let f = min(1, max(0, focus))
+            // 缩放分段：focus [0, 0.5] 走 0.96→0.985（离场页在它还看得见的
+            // 前半程只缩到 0.985），[0.5, 1] 走 0.985→1（进场页后半程长满）
+            let scale: CGFloat = f < 0.5
+                ? 0.96 + 0.025 * CGFloat(f / 0.5)
+                : 0.985 + 0.015 * CGFloat((f - 0.5) / 0.5)
+            return content
+                .scaleEffect(scale)
+                .offset(y: CGFloat(1 - f) * 10)
+                .opacity(pow(f, 1.8))
+        }
     }
 
     /// 首次进入时把状态对齐当前排序：A 组里选中的必须是底栏前 3 页之一
@@ -181,11 +221,13 @@ struct ContentView: View {
         mountedPages.insert(currentPage)
     }
 
-    /// 排序变化（外观页拖动）：一律重置回 A 组，保证状态和新顺序一致（硬切）
+    /// 排序变化（外观页拖动）：一律重置回 A 组，保证状态和新顺序一致（无动画，
+    /// 这是设置页里的数据重置、不是一次换组动作）
     private func resetNativeForOrderChange() {
         withTransaction(instant) {
             searchShown = false
             barGroup = .a
+            originOpacity = 0
             if !tabOrder.barTabs.contains(currentPage) {
                 currentPage = tabOrder.barTabs.first ?? tabOrder.order.first ?? .accounts
             }
@@ -194,34 +236,39 @@ struct ContentView: View {
         mountedPages.insert(currentPage)
     }
 
-    /// 点底栏里的真实页（经 TBC 代理 didSelect 回报）：页面瞬间到位；
+    /// 点底栏里的真实页（经 TBC 代理 didSelect 同步回报，和底栏自身的选中
+    /// 动画同 tick）：页面以 PageFocusModifier 的设计过渡到位（swapSpring）；
     /// A 组里出处恒等于当前页（点「更多」时独立出去的就是它），随选随同步
     private func selectPage(_ tab: AppTab) {
         mountedPages.insert(tab)
-        withTransaction(instant) {
+        withAnimation(swapSpring) {
             currentPage = tab
             if barGroup == .a { originTab = tab }
         }
     }
 
     /// 点「更多」进 B 组：当前页记为出处（它将以独立圆钮出现在左边），
-    /// 选中其余页的第一个——逻辑状态同帧硬切；底栏条随后横移让位
-    /// （条的条目集合同帧换成 B 组，横移动画在 nativeBar 的布局层）
+    /// 选中其余页的第一个。全部状态在同一个 withAnimation 里变更——条目集
+    /// 在 representable 的同帧更新里换成 B 组、条的 leading 横移、出处圆钮
+    /// 跟随条左缘并淡入、页面过渡，全部由 swapSpring 一个节拍驱动
     private func enterGroupB() {
         guard let first = tabOrder.moreTabs.first else { return }
         mountedPages.insert(first)
-        withTransaction(instant) {
+        withAnimation(swapSpring) {
             originTab = currentPage
             barGroup = .b
             currentPage = first
+            originOpacity = 1
         }
     }
 
-    /// 点出处圆钮：回 A 组并选中出处页——页面硬切，底栏条横移回全宽
+    /// 点出处圆钮：回 A 组并选中出处页——同一个弹簧里条横移回全宽、圆钮
+    /// 跟随条左缘退场并淡出、页面过渡回出处页
     private func backToOrigin() {
-        withTransaction(instant) {
+        withAnimation(swapSpring) {
             barGroup = .a
             currentPage = originTab
+            originOpacity = 0
         }
     }
 
@@ -229,36 +276,39 @@ struct ContentView: View {
         savedPage = currentPage
         savedGroup = barGroup
         savedOrigin = originTab
-        withTransaction(instant) {
-            searchShown = true
-        }
+        searchShown = true
     }
 
-    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组（硬切）
+    /// 搜索里点「关闭」：原样回到进搜索前的页面和分组（同一弹簧，
+    /// 若页面 / 分组与当前一致则只有搜索页退场、无可见变化）
     private func closeSearch() {
-        withTransaction(instant) {
+        withAnimation(swapSpring) {
             searchShown = false
             currentPage = savedPage
             barGroup = savedGroup
             originTab = savedOrigin
+            originOpacity = savedGroup == .b ? 1 : 0
         }
     }
 
     /// 搜索点中结果：底栏页 → 回 A 组选中它；其余页 → 进 B 组选中它，
-    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）
+    /// 出处 = 进搜索前所在分组的 A 组页面（A 组时就是当时页面，B 组时是当时的出处）。
+    /// 分组若变，和换组同一个编排：条目集、条横移、圆钮跟随、页面过渡同 tick 同弹簧
     private func pickFromSearch(_ tab: AppTab) {
         let returnOrigin = savedGroup == .a ? savedPage : savedOrigin
         mountedPages.insert(tab)
-        withTransaction(instant) {
+        withAnimation(swapSpring) {
             searchShown = false
             if tabOrder.barTabs.contains(tab) {
                 barGroup = .a
                 originTab = tab
                 currentPage = tab
+                originOpacity = 0
             } else {
                 barGroup = .b
                 originTab = returnOrigin
                 currentPage = tab
+                originOpacity = 1
             }
         }
     }
@@ -286,7 +336,9 @@ struct ContentView: View {
     /// 空间放出处圆钮（系统玻璃圆按钮，只是按钮、不是选中元素：不带任何
     /// 高亮层，出处页的字形用主色，和系统未选中项一个读法）。
     /// 两组 footprint 恒定：圆钮区（68）+ 条 = 永远占满边距到边距、同高。
-    /// 横移用弹簧（≈0.35s）驱动 leading，逻辑状态在此之前已硬切到位
+    /// 横移由全外壳唯一的 swapSpring 驱动 leading：换组的状态变更在同一
+    /// tick 里提交，条的条目集在 representable 更新里同帧替换，系统底栏的
+    /// 玻璃与条目变形是它自己的事、与条作为一个整体同进同退
     @available(iOS 26.0, *)
     private var nativeBar: some View {
         ZStack(alignment: .topLeading) {
@@ -304,22 +356,29 @@ struct ContentView: View {
                 }
             )
             .padding(.leading, barGroup == .b ? 68 : 0)
-            if barGroup == .b {
-                originCircle
-                    .position(x: 44, y: barStripHeight - barCenterFromBottom)
-            }
+            // 出处圆钮常驻（不在换组时挂载 / 卸载）：它的中心和条的左缘锁死
+            // 在同一个弹簧上——A 态 = 左缘外 24pt 处（originOpacity 0、
+            // 不可见、不可点），B 态 = 左缘内、腾空区中心 44pt；换组全程
+            // 圆钮随条左缘同进同退并同步淡入 / 淡出，不瞬移、不独立计时、
+            // 不从屏幕外飞入
+            originCircle
+                .position(x: barGroup == .b ? 44 : -24, y: barStripHeight - barCenterFromBottom)
+                .opacity(originOpacity)
+                .accessibilityHidden(barGroup != .b)
         }
         .frame(maxWidth: .infinity)
         .frame(height: barStripHeight)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: barGroup)
+        .animation(swapSpring, value: barGroup)
         .ignoresSafeArea(edges: .bottom)
     }
 
-    /// 出处圆钮（B 组时出现在底栏左侧腾出的空间里）：56pt 系统玻璃圆按钮，
+    /// 出处圆钮（B 组时落在底栏左侧腾出的空间里）：56pt 系统玻璃圆按钮，
     /// 字形 = 出处页自己的图标（和它在条里时同一个来源），纵向和系统底栏
     /// 的中心对齐（读量测 barCenterFromBottom）。点它回 A 组并选中出处页。
     /// 它不是选中元素：没有任何高亮 / 透镜 / 染色，选中态的表达只有系统
-    /// 底栏那一份（在条里），圆钮字形保持主色
+    /// 底栏那一份（在条里），圆钮字形保持主色。位置 / 透明的动画不在这里：
+    /// 由 nativeBar 的布局层按 barGroup / originOpacity 用 swapSpring 统一
+    /// 驱动（常驻 + 跟随条左缘，见 nativeBar 注释）；A 组时不可点
     @available(iOS 26.0, *)
     private var originCircle: some View {
         Button {
@@ -332,7 +391,7 @@ struct ContentView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .allowsHitTesting(!searchShown)
+        .allowsHitTesting(barGroup == .b && !searchShown)
     }
 
     /// 底栏字形来源：SF 符号或用户自定义模板图（Assets）。出处圆钮用：
@@ -531,7 +590,10 @@ private final class BarOnlyTabBarController: UITabBarController {
 /// shouldSelectTab 里被拦下（不许选中），分别翻译成外壳的换组与打开搜索
 /// 伪页面；真实页面的点选经 didSelectTab 回报外壳切页——且 didSelect 只
 /// 转发紧跟着 shouldSelect 放行的那次（userInitiated 标记），程序化改选中
-/// 和条目集切换引起的回调一律丢弃，不许反过来改外壳状态
+/// 和条目集切换引起的回调一律丢弃，不许反过来改外壳状态。代理回调全部
+/// 同步直达外壳（Build 25 起不再 DispatchQueue.main.async 转发）：切页
+/// 过渡要在与底栏自身选中动画同一个 tick 里起步，异步转发会把两者错开
+/// 一帧以上——Build 24 的页面重影有一份就来自这条被延迟的同步路径
 @available(iOS 26.0, *)
 private struct NativeTabBarView: UIViewControllerRepresentable {
     var items: [NativeBarItemSpec]
@@ -615,11 +677,11 @@ private struct NativeTabBarView: UIViewControllerRepresentable {
         func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
             guard let parent else { return true }
             if tab is UISearchTab {
-                DispatchQueue.main.async { parent.onSearch() }
+                parent.onSearch()
                 return false
             }
             if tab.identifier == "more" {
-                DispatchQueue.main.async { parent.onMore() }
+                parent.onMore()
                 return false
             }
             userInitiated = tab.identifier
@@ -632,7 +694,7 @@ private struct NativeTabBarView: UIViewControllerRepresentable {
                   let spec = parent.items.first(where: { $0.id == selectedTab.identifier }),
                   let tab = spec.tab else { return }
             userInitiated = nil
-            DispatchQueue.main.async { parent.onSelectPage(tab) }
+            parent.onSelectPage(tab)
         }
 
         /// 量系统底栏的真实帧回填外壳：条高 = 栏顶到条底（条钉在窗口底边，
