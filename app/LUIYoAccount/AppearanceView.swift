@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 外观：全局字体（从设置页搬入，行为不变）+ 底栏排序（前 3 个进底栏，其余收进「更多」）
+/// 外观：全局字体（从设置页搬入，行为不变）+ 底栏排序（五个页都在底栏里，这里只调顺序）
 struct AppearanceView: View {
     @EnvironmentObject var fontStore: FontStore
     @EnvironmentObject var tabOrder: TabOrderStore
@@ -60,16 +60,13 @@ struct AppearanceView: View {
             }
 
             Section {
-                ForEach(Array(tabOrder.order.enumerated()), id: \.element.id) { idx, tab in
+                ForEach(tabOrder.order) { tab in
                     HStack(spacing: 10) {
                         Image(systemName: tab.icon)
                             .foregroundColor(.accentColor)
                             .frame(width: 24)
                         Text(tab.title)
                         Spacer()
-                        Text(idx < 3 ? "显示中" : "在更多里")
-                            .appFont(.caption)
-                            .foregroundColor(.secondary)
                     }
                 }
                 .onMove { tabOrder.move(from: $0, to: $1) }
@@ -77,7 +74,7 @@ struct AppearanceView: View {
                 AppSectionHeader("底栏排序")
             }
             Section {
-                Text("前 3 个进底栏，其余收进「更多」；点右上角编辑后拖动排序，底栏立即更新。")
+                Text("拖动调整底栏里五个页的顺序；点右上角编辑后拖动排序，底栏立即更新。")
                     .appFont(.footnote)
                     .foregroundColor(.secondary)
             }
