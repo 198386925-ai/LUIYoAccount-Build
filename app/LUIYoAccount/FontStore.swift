@@ -67,17 +67,51 @@ final class FontStore: ObservableObject {
         return min(1.05, max(0.6, raw))
     }
 
-    /// 字距补偿 = −（自定义字体每字平均宽度 − 系统字体每字平均宽度），17pt 下量样例 CJK 字串，夹在 [−8, 0]
-    /// （上限放宽：有的字体每字多占的宽度超过 3pt，卡在 −3 永远收不干净）
+    /// 量墨迹边界用的位图上下文（只算几何、不真绘制，建一个小的复用）
+    private static let measureContext: CGContext? = CGContext(
+        data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+    /// 字距补偿（17pt 基准）= −（自定义字体比系统字体多出的每字墨迹间隙）。
+    /// 墨迹间隙 = 字格宽（advance）− 墨迹宽（笔画真正画到的范围）：有的字体字格和系统一样宽（≈1em），
+    /// 只是笔画画得窄、格内留白多——只比字格宽，差值 ≈ 0，补偿永远算不出来；必须比墨迹间隙，
+    /// 把多出的留白收掉。CJK 与数字各测一份取更负的一份（数字同样散）。
+    /// 任一样本量不到墨迹就退回旧的字格差算法。结果夹在 [−8, 0]。
     static func computeTrackingCompensation(psName: String) -> CGFloat {
         guard !psName.isEmpty, let custom = UIFont(name: psName, size: 17) else { return 0 }
-        let sample = "永永永永永"
+        let sys = UIFont.systemFont(ofSize: 17)
+        var result: CGFloat = 0
+        for sample in ["永永永永永", "2026"] {
+            if let cg = inkGap(for: sample, font: custom), let sg = inkGap(for: sample, font: sys) {
+                result = min(result, -(cg - sg))
+            } else if let d = advanceDeltaPerChar(sample, custom: custom, sys: sys) {
+                result = min(result, -d)
+            }
+        }
+        return min(0, max(-8, result))
+    }
+
+    /// 一个字的墨迹间隙 = 字格总宽 − 墨迹总宽。
+    /// 同字重复样本：墨迹跨度 = (n−1)×字格宽 + 单字墨迹宽，所以 字格总宽 − 墨迹跨度
+    /// 恰好等于单字两侧留白之和，也就是相邻两字墨迹之间的空当。量不到返回 nil。
+    private static func inkGap(for sample: String, font: UIFont) -> CGFloat? {
+        let attr = NSAttributedString(string: sample, attributes: [.font: font])
+        let line = CTLineCreateWithAttributedString(attr)
+        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        guard advance > 0, let ctx = measureContext else { return nil }
+        let ink = CTLineGetImageBounds(line, ctx)
+        guard ink.width > 0, ink.width.isFinite, ink.width <= advance * 1.05 else { return nil }
+        return advance - ink.width
+    }
+
+    /// 旧算法（兜底）：每字字格宽差
+    private static func advanceDeltaPerChar(_ sample: String, custom: UIFont, sys: UIFont) -> CGFloat? {
         let cw = (sample as NSString).size(withAttributes: [.font: custom]).width
-        let sw = (sample as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 17)]).width
+        let sw = (sample as NSString).size(withAttributes: [.font: sys]).width
         let n = CGFloat(sample.count)
-        guard n > 0, cw > 0 else { return 0 }
-        let delta = (cw - sw) / n
-        return min(0, max(-8, -delta))
+        guard n > 0, cw > 0 else { return nil }
+        return (cw - sw) / n
     }
 
     /// 某语义样式实际字号缩放后的字距补偿（补偿量在 17pt 测得，按实际渲染字号等比缩放；

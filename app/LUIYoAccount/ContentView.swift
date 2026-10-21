@@ -1,15 +1,22 @@
 import SwiftUI
-import UIKit
 
-/// 外壳：登录后是自定义悬浮底栏——顺序前 3 个页面进胶囊底栏，第 4 个是「更多」
-/// （点开在底栏上方弹出小卡，列出其余页面），胶囊右侧另有一个独立圆形搜索按钮
-/// （打开全局搜索）。顺序由 TabOrderStore 管理，在「设置 → 外观 → 底栏排序」里拖动调整。
+/// 底栏选择值：页面 tab /「更多」tab / 搜索 tab
+enum ShellTab: Hashable {
+    case page(AppTab)
+    case more
+    case search
+}
+
+/// 外壳：标准原生底栏，不自绘、不改外观——iOS 26 上系统底栏自带液态玻璃，
+/// 照主 App 的做法（标准 UITabBar + UISearchTab）：前 3 个页面是普通 tab，
+/// 第 4 个是「更多」tab（里面先列其余页面，点中整页换入），
+/// 最后是搜索 tab（iOS 26 用 Tab(role: .search)，渲染成右侧分离的原生玻璃搜索；
+/// iOS 16–25 降级为普通放大镜 tab）。顺序由 TabOrderStore 管理（外观页里拖动排序）。
 struct ContentView: View {
     @EnvironmentObject var api: AccountAPI
     @StateObject private var tabOrder = TabOrderStore()
-    @State private var selection: AppTab = .accounts
-    @State private var showMore = false
-    @State private var showSearch = false
+    @State private var selection: ShellTab = .page(.accounts)
+    @State private var morePage: AppTab?
     @State private var autoDone = false
 
     var body: some View {
@@ -40,186 +47,144 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 主外壳（页面 + 悬浮底栏）
+    // MARK: - 主外壳（原生底栏）
 
+    @ViewBuilder
     private var mainShell: some View {
-        ZStack {
-            TabView(selection: $selection) {
-                AccountsView()
-                    .tag(AppTab.accounts)
-                    .toolbar(.hidden, for: .tabBar)
-                CardsView()
-                    .tag(AppTab.cards)
-                    .toolbar(.hidden, for: .tabBar)
-                MailLogView()
-                    .tag(AppTab.mail)
-                    .toolbar(.hidden, for: .tabBar)
-                UpdateView()
-                    .tag(AppTab.update)
-                    .toolbar(.hidden, for: .tabBar)
-                SettingsView()
-                    .tag(AppTab.settings)
-                    .toolbar(.hidden, for: .tabBar)
+        Group {
+            if #available(iOS 26.0, *) {
+                modernShell
+            } else {
+                legacyShell
             }
-            // 给悬浮底栏 + 搜索按钮让出底部空间，内容不被压住
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: 88)
-            }
+        }
+        .onChange(of: tabOrder.order) { _ in syncSelectionWithOrder() }
+    }
 
-            // 「更多」打开时铺一层透明点击层，点别处收起（底栏在它上层，照常可点）
-            if showMore {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.18)) { showMore = false } }
+    /// iOS 26：Tab 构建写法，搜索是 role: .search 的 tab——系统把它拆到
+    /// 底栏右端单独渲染（原生液态玻璃），和主 App 的 UISearchTab 一致
+    @available(iOS 26.0, *)
+    private var modernShell: some View {
+        TabView(selection: selectionBinding) {
+            ForEach(tabOrder.barTabs) { tab in
+                Tab(tab.title, systemImage: tab.icon, value: ShellTab.page(tab)) {
+                    pageView(tab)
+                }
             }
+            Tab("更多", systemImage: "ellipsis.circle", value: ShellTab.more) {
+                moreContainer
+            }
+            Tab(value: ShellTab.search, role: .search) {
+                GlobalSearchView { navigateFromSearch($0) }
+            }
+        }
+    }
 
-            VStack(spacing: 0) {
-                Spacer()
-                if showMore {
+    /// iOS 16–25：经典 tabItem 写法，搜索降级为普通 tab（放大镜图标，排在最后）
+    private var legacyShell: some View {
+        TabView(selection: selectionBinding) {
+            ForEach(tabOrder.barTabs) { tab in
+                pageView(tab)
+                    .tabItem { Label(tab.title, systemImage: tab.icon) }
+                    .tag(ShellTab.page(tab))
+            }
+            moreContainer
+                .tabItem { Label("更多", systemImage: "ellipsis.circle") }
+                .tag(ShellTab.more)
+            GlobalSearchView { navigateFromSearch($0) }
+                .tabItem { Label("搜索", systemImage: "magnifyingglass") }
+                .tag(ShellTab.search)
+        }
+    }
+
+    /// 选中绑定：再次点已选中的「更多」tab → 回到更多列表
+    private var selectionBinding: Binding<ShellTab> {
+        Binding(
+            get: { selection },
+            set: { newValue in
+                if newValue == .more && selection == .more { morePage = nil }
+                selection = newValue
+            }
+        )
+    }
+
+    /// 排序变化后修正状态：打开中的更多页进了底栏就关掉；
+    /// 当前选中的页面掉出底栏，就转到「更多」tab 里继续打开着
+    private func syncSelectionWithOrder() {
+        if let page = morePage, !tabOrder.moreTabs.contains(page) { morePage = nil }
+        if case .page(let tab) = selection, !tabOrder.barTabs.contains(tab) {
+            morePage = tab
+            selection = .more
+        }
+    }
+
+    /// 全局搜索点中结果：在底栏的页面直接切 tab；在「更多」里的切更多 tab 并打开该页
+    private func navigateFromSearch(_ tab: AppTab) {
+        if tabOrder.barTabs.contains(tab) {
+            selection = .page(tab)
+        } else {
+            morePage = tab
+            selection = .more
+        }
+    }
+
+    @ViewBuilder
+    private func pageView(_ tab: AppTab) -> some View {
+        switch tab {
+        case .accounts: AccountsView()
+        case .cards: CardsView()
+        case .mail: MailLogView()
+        case .update: UpdateView()
+        case .settings: SettingsView()
+        }
+    }
+
+    // MARK: - 「更多」tab 内容
+
+    /// 没打开页面时是其余页面的列表；打开后把该页整页换进来
+    /// （页面自带导航栈，直接平铺替换，不再套一层导航），顶部一条「‹ 更多」返回列表
+    private var moreContainer: some View {
+        Group {
+            if let page = morePage {
+                VStack(spacing: 0) {
                     HStack {
-                        Spacer()
-                        moreMenu
-                    }
-                    .padding(.trailing, 84)
-                    .padding(.bottom, 10)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-                bottomBar
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
-        }
-        .sheet(isPresented: $showSearch) {
-            GlobalSearchView { tab in
-                selection = tab
-                showMore = false
-            }
-        }
-    }
-
-    // MARK: - 悬浮底栏（胶囊：前 3 页 + 更多；右侧独立圆形搜索按钮）
-
-    private var bottomBar: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            HStack(spacing: 2) {
-                ForEach(tabOrder.barTabs) { tab in
-                    barItem(tab)
-                }
-                moreItem
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 6)
-            .background {
-                Capsule()
-                    .fill(Color(UIColor.systemBackground).opacity(0.94))
-                    .shadow(color: .black.opacity(0.13), radius: 14, y: 4)
-            }
-
-            Button {
-                showSearch = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 60, height: 60)
-                    .background {
-                        Circle()
-                            .fill(Color(UIColor.systemBackground).opacity(0.94))
-                            .shadow(color: .black.opacity(0.13), radius: 14, y: 4)
-                    }
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func barItem(_ tab: AppTab) -> some View {
-        Button {
-            selection = tab
-            withAnimation(.easeInOut(duration: 0.18)) { showMore = false }
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 19))
-                Text(tab.title)
-                    .appFont(size: 10.5)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 5)
-            .foregroundColor(selection == tab ? .accentColor : .primary)
-            .background {
-                if selection == tab {
-                    Capsule().fill(Color.gray.opacity(0.16))
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// 当前选中的页面在「更多」里时，「更多」呈选中态（蓝）
-    private var moreHighlighted: Bool {
-        showMore || !tabOrder.barTabs.contains(selection)
-    }
-
-    private var moreItem: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.18)) { showMore.toggle() }
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 19, weight: .bold))
-                Text("更多")
-                    .appFont(size: 10.5)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 5)
-            .foregroundColor(moreHighlighted ? .accentColor : .primary)
-            .background {
-                if moreHighlighted {
-                    Capsule().fill(Color.gray.opacity(0.16))
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - 「更多」弹出小卡（其余页面）
-
-    private var moreMenu: some View {
-        let rest = tabOrder.moreTabs
-        return VStack(alignment: .leading, spacing: 0) {
-            ForEach(rest) { tab in
-                Button {
-                    selection = tab
-                    withAnimation(.easeInOut(duration: 0.18)) { showMore = false }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: tab.icon)
-                            .frame(width: 22)
-                        Text(tab.title)
+                        Button {
+                            morePage = nil
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "chevron.left")
+                                Text("更多")
+                            }
                             .appFont(.body)
+                        }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    pageView(page)
                 }
-                .buttonStyle(.plain)
-                .foregroundColor(selection == tab ? .accentColor : .primary)
-                if tab.id != rest.last?.id {
-                    Divider().padding(.leading, 46)
+            } else {
+                List {
+                    ForEach(tabOrder.moreTabs) { tab in
+                        Button {
+                            morePage = tab
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: tab.icon)
+                                    .frame(width: 24)
+                                Text(tab.title)
+                                    .appFont(.body)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.primary)
+                    }
                 }
             }
-        }
-        .frame(width: 176)
-        .background {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(UIColor.systemBackground).opacity(0.97))
-                .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
         }
     }
 }

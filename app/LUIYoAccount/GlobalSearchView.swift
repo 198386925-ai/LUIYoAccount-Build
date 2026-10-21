@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// 全局搜索（底栏右侧圆形按钮打开）：首次打开时拉账号 / 卡密 / 邮件三份列表，
-/// 之后本地按关键词过滤、分组展示；点任意结果关掉搜索并切到对应页面
+/// 全局搜索（底栏搜索 tab 的内容）：首次出现时拉账号 / 卡密 / 邮件三份列表，
+/// 之后本地按关键词过滤、分组展示；点任意结果切到对应页面（底栏页直接切，
+/// 「更多」里的页由外壳切到更多 tab 并打开）
 struct GlobalSearchView: View {
     @EnvironmentObject var api: AccountAPI
-    @Environment(\.dismiss) private var dismiss
     let onSelect: (AppTab) -> Void
 
     @State private var query = ""
@@ -116,11 +116,6 @@ struct GlobalSearchView: View {
             }
             .navigationTitle("全局搜索")
             .searchable(text: $query, prompt: "搜索账号 / 卡密 / 邮件")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { dismiss() }
-                }
-            }
             .task { await loadIfNeeded() }
         }
     }
@@ -134,7 +129,6 @@ struct GlobalSearchView: View {
 
     private func pick(_ tab: AppTab) {
         onSelect(tab)
-        dismiss()
     }
 
     private func loadIfNeeded() async {
