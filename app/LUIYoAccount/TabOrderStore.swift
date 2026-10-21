@@ -26,6 +26,16 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .settings: return "gearshape.fill"
         }
     }
+
+    /// 用户自定义图标（Assets 里的模板图，系统按选中态着色，和 SF 符号同等待遇）；
+    /// 非 nil 时底栏和外观排序列表都用它，nil = 用上面的 SF 符号
+    var customIconAsset: String? {
+        switch self {
+        case .accounts: return "TabIconAccount"
+        case .cards: return "TabIconCard"
+        default: return nil
+        }
+    }
 }
 
 /// 底栏顺序仓库：UserDefaults 持久化（tabOrderV1），默认 账号/生成卡密/邮件/应用更新/设置；

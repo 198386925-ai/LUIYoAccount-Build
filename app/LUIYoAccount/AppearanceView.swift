@@ -62,9 +62,18 @@ struct AppearanceView: View {
             Section {
                 ForEach(Array(tabOrder.order.enumerated()), id: \.element.id) { idx, tab in
                     HStack(spacing: 10) {
-                        Image(systemName: tab.icon)
-                            .foregroundColor(.accentColor)
-                            .frame(width: 24)
+                        Group {
+                            if let asset = tab.customIconAsset {
+                                Image(asset)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 19, height: 19)
+                            } else {
+                                Image(systemName: tab.icon)
+                            }
+                        }
+                        .foregroundColor(.accentColor)
+                        .frame(width: 24)
                         Text(tab.title)
                         Spacer()
                         Text(idx < 3 ? "显示中" : "在更多里")

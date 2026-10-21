@@ -117,11 +117,16 @@ struct ContentView: View {
     private func tabLabel(_ item: ShellTab) -> some View {
         switch item {
         case .page(let tab):
-            Label(tab.title, systemImage: tab.icon)
+            if let asset = tab.customIconAsset {
+                // 用户自定义模板图（资源目录 template 渲染，系统着色同 SF 符号）
+                Label { Text(tab.title) } icon: { Image(asset) }
+            } else {
+                Label(tab.title, systemImage: tab.icon)
+            }
         case .more:
-            Label("更多", systemImage: "ellipsis")
+            Label { Text("更多") } icon: { Image("TabIconMore") }
         case .collapse:
-            Label("收起", systemImage: "ellipsis")
+            Label { Text("收起") } icon: { Image("TabIconMore") }
         case .search:
             Label("搜索", systemImage: "magnifyingglass")
         }
