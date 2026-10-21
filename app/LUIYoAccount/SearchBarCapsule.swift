@@ -1,11 +1,10 @@
 import SwiftUI
 
 /// 搜索胶囊离页面底边的距离，由外壳注入：
-/// - 玻璃外壳：底栏下边距 6 + 栏高 64 + 间隙 10 = 80，胶囊底边正好落在底栏顶边上方 10pt
-/// - 旧 TabView 外壳：系统底栏（含主屏幕指示条区）约 83 + 间隙 10 = 93
-/// 胶囊永远浮在底栏上方、和底栏零重叠
+/// 系统原生底栏（含主屏幕指示条区）约 83 + 间隙 10 = 93，
+/// 胶囊底边正好落在底栏顶边上方 10pt，永远浮在底栏上方、和底栏零重叠
 private struct SearchBarBottomKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 80
+    static let defaultValue: CGFloat = 93
 }
 
 extension EnvironmentValues {
@@ -16,6 +15,8 @@ extension EnvironmentValues {
 }
 
 /// 页面内搜索胶囊：放大镜 + 输入框 + 清除钮，表面是系统玻璃（iOS 26）/ 系统材质（旧系统）。
+/// 尺寸是标准搜索框大小：高 40、圆角 20、文字 15pt（Build 20 它和 64pt 的底栏
+/// 差不多大，用户嫌大——搜索框就该是搜索框的大小，明显比底栏小一圈）。
 /// 为什么不用系统 searchable：iOS 26 把它的搜索框托管在窗口层、贴屏幕最底部渲染——
 /// 它不在页面视图树里，页面的 opacity 隐藏和外壳的底部预留区都管不住它，于是它比
 /// 玻璃胶囊更宽、从底栏下方伸出来透过玻璃（Build 16 截图的重叠缺陷）。
@@ -27,6 +28,7 @@ struct SearchBarCapsule: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
+                .font(.system(size: 15))
                 .foregroundColor(.secondary)
             TextField(prompt, text: $query)
                 .autocorrectionDisabled()
@@ -39,14 +41,15 @@ struct SearchBarCapsule: View {
                 .buttonStyle(.plain)
             }
         }
-        .appFont(.body)
+        .appFont(size: 15)
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 40)
         .modifier(SearchCapsuleSurface())
     }
 }
 
-/// 胶囊表面：iOS 26 用系统液态玻璃（和底栏同一种玻璃），旧系统退系统材质 + 轻影
+/// 胶囊表面：iOS 26 用系统液态玻璃（和底栏同一种玻璃），旧系统退系统材质 + 轻影；
+/// 形状用 Capsule（高 40 时圆角正好 20）
 private struct SearchCapsuleSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
