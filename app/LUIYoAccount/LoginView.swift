@@ -8,7 +8,7 @@ struct LoginView: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 13) {
             Spacer()
             Image(systemName: "person.crop.circle.fill")
                 .font(.system(size: 64))

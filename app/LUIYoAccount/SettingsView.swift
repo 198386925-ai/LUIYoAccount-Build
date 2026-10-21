@@ -22,11 +22,6 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    Text("全局字体、底栏排序都在外观里。")
-                        .appFont(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                Section {
                     LabeledContent("地址", value: "luioe.bbroot.com")
                     LabeledContent("账号接口", value: "user-auth-v2.php")
                     LabeledContent("更新源", value: "updates/latest.json")
@@ -43,11 +38,6 @@ struct SettingsView: View {
                     Button("退出登录", role: .destructive) {
                         api.logout()
                     }
-                }
-                Section {
-                    Text("退出后下次打开需要重新输入管理员密码。账号、卡密、应用更新三个页面共用这一个密码。")
-                        .appFont(.footnote)
-                        .foregroundColor(.secondary)
                 }
             }
             .compactSectionSpacing()

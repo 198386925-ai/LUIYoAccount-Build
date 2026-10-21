@@ -37,12 +37,13 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
                     }
+                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                     VStack(alignment: .leading, spacing: 8) {
                         Text("SVIP 天数")
                         PillSegmented(options: [("30", "30天"), ("90", "90天"), ("180", "180天"), ("365", "365天"), ("36500", "永久")],
                                       selection: $daysValue)
                     }
-                    .padding(.vertical, 2)
+                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                     HStack {
                         Text("备注")
                         Spacer()
@@ -50,6 +51,7 @@ struct CardsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 180)
                     }
+                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                     Button {
                         Task { await generate() }
                     } label: {
@@ -59,9 +61,7 @@ struct CardsView: View {
                         }
                     }
                     .disabled(generating)
-                    Text("格式：LUI-备注-随机码（备注可空）。天数从上面选，选「永久」就是永久卡。生成的卡发给用户，用户在主 App 登录后绑卡开通 SVIP。")
-                        .appFont(.footnote)
-                        .foregroundColor(.secondary)
+                    .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
                 } header: {
                     AppSectionHeader("生成卡密")
                 }

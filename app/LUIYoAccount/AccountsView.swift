@@ -163,7 +163,7 @@ struct AccountsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 2)
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .disabled(banEmail.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -183,7 +183,7 @@ struct AccountsView: View {
                 .textInputAutocapitalization(.never)
         }
         // 封禁表单行上下压紧（布局/标签不变，只收行高）
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
     }
 
     private func submitBanForm() {

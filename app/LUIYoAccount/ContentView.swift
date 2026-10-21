@@ -120,10 +120,10 @@ struct ContentView: View {
     /// 两头和落位帧严丝合缝。只在换组动画期间非 nil，落位后清掉，
     /// 常态高亮（GlideLens）接管
     @State private var lensTravel: (aTab: AppTab, bTab: AppTab)?
-    /// 窗口底安全区的活值（Build 31）：从当前 key window 读回，不写死 34。
-    /// 玻璃外壳的几何换算全用它：底栏用显式坐标钉到物理底边（见 glassShell
-    /// 的底栏层），页面底部留白和搜索胶囊下边距这两个锚停在安全线上的留白，
-    /// 代码值 = 渲染值 − 这个活值（渲染口径见各处注释）
+    /// 窗口底安全区的活值（Build 31 引入、32 沿用）：从当前 key window
+    /// 读回，不写死 34。玻璃外壳的几何换算全用它：底栏下边距、页面底部
+    /// 留白、搜索胶囊下边距这三个锚都停在安全线（或以安全线为锚），
+    /// 代码值一律 = 渲染值 − 这个活值（渲染口径见各处注释）
     @State private var windowBottomInset: CGFloat = 0
 
     /// 刷新窗口底安全区：key window 优先，没有就退任意 window；
@@ -200,68 +200,66 @@ struct ContentView: View {
         case .cards: CardsView()
         case .mail: MailLogView()
         case .update: UpdateView()
+        case .versions: VersionsView()
         case .settings: SettingsView()
         }
     }
 
     // MARK: - iOS 26 液态玻璃换组外壳
 
-    /// 五个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（opacity 切显隐），
+    /// 六个页面同住一个 ZStack：访问过的才挂载，挂载后一直保活（opacity 切显隐），
     /// 各自的导航栈、滚动位置、已加载数据都不丢；搜索以伪页面盖在最上层。
     /// 底部 safeAreaInset 留出底栏高度，页面内容永远不被浮动底栏挡住。
     ///
-    /// 底栏定位（Build 31）：28/30 两版把 .ignoresSafeArea(edges: .bottom) 挂在
-    /// 页面 ZStack 上、底栏用 .overlay(alignment: .bottom) 对齐——真机量出来
-    /// 栏的渲染下边距恒 = 窗口底安全区 + 代码下边距（27 版 55 = 34 + 21、
-    /// 30 版 44 = 34 + 10）：页面 ZStack 的帧下边始终停在安全线上，
-    /// ignoresSafeArea 没能把它放下去，overlay 的底部锚也就跟着停在安全线。
-    /// 31 版把底栏拆成独立一层，用 GeometryReader 显式算物理底边的坐标：
-    /// 物理底边 y = 层高 +（窗口底安全区活值 − 这层自己的底安全区）。
-    /// 这层真沉到物理底边时，层高 = 物理屏高、它自己的底安全区 = 窗口安全区，
-    /// 修正量为 0；没沉下去时层高停在安全线、它自己的底安全区 = 0，修正量
-    /// 正好是窗口安全区——两种布局结果下算出的都是同一个物理底边，
-    /// 代码里的下边距 4 就是渲染出来的 4，和设备的安全区大小无关。
-    /// 页面留白和搜索胶囊这两个锚仍停在安全线（页面层原样不动），它们的
-    /// 代码值 = 渲染值 − 窗口底安全区活值：页面留白渲染 98（栏顶渲染
+    /// 底栏定位（Build 32）：回到 Build 30 的 overlay 锚——底栏挂在页面层
+    /// 的 .overlay(alignment: .bottom) 上，这个锚的行为真机量过、可预测：
+    /// 渲染下边距 = 代码下边距 + 窗口底安全区（Build 27: 55 = 21 + 34、
+    /// Build 30: 44 = 10 + 34）。31 版改用 GeometryReader 显式公式，
+    /// 在「层真沉到物理底边」的那种布局结果下把安全区重复加了一遍，
+    /// 栏被推到屏外（用户截图：只剩胶囊顶边一条露在屏幕底边上），整层
+    /// 删掉。32 版的下边距 = 4 − 窗口底安全区活值：用户机上 = 4 − 34 =
+    /// −30，把栏拉进主屏幕指示条区，渲染下边距恰好 4（贴底停靠，和
+    /// GitHub 那种原生栏一样）；钳制保证代码下边距不小于 −安全区，
+    /// 渲染间隙永不为负。
+    /// 页面留白和搜索胶囊这两个锚同样停在安全线，代码值 = 渲染值 −
+    /// 窗口底安全区活值（31 版的换算保留）：页面留白渲染 98（栏顶渲染
     /// 68 + 上方间隔 30），搜索胶囊渲染 78（栏顶 + 10，注入处换算）。
     @available(iOS 26.0, *)
     private var glassShell: some View {
         ZStack {
-            // 页面层（Build 30 原样：保活 ZStack + 硬切 + 底部留白）
-            ZStack {
-                ForEach(AppTab.allCases) { tab in
-                    if mountedPages.contains(tab) {
-                        pageView(tab)
-                            .opacity(!searchShown && currentPage == tab ? 1 : 0)
-                            .allowsHitTesting(!searchShown && currentPage == tab)
-                            .accessibilityHidden(searchShown || currentPage != tab)
-                    }
-                }
-                if searchShown {
-                    GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
+            ForEach(AppTab.allCases) { tab in
+                if mountedPages.contains(tab) {
+                    pageView(tab)
+                        .opacity(!searchShown && currentPage == tab ? 1 : 0)
+                        .allowsHitTesting(!searchShown && currentPage == tab)
+                        .accessibilityHidden(searchShown || currentPage != tab)
                 }
             }
-            .ignoresSafeArea(edges: .bottom)
-            // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
-            .transaction { $0.animation = nil }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: max(98 - windowBottomInset, 0))
+            if searchShown {
+                GlobalSearchView(onSelect: { pickFromSearch($0) }, onClose: { closeSearch() })
             }
-            // 底栏层：显式几何定位（见上方注释）——胶囊底边离物理底边 4，
-            // 栏占 [4, 68]；这层只有 glassBar 有内容，其余区域不挡页面点按
-            GeometryReader { geo in
-                let physicalBottom = geo.size.height + (windowBottomInset - geo.safeAreaInsets.bottom)
-                glassBar
-                    .frame(width: geo.size.width, height: 64)
-                    .position(x: geo.size.width / 2, y: physicalBottom - 4 - 32)
-            }
-            .ignoresSafeArea(edges: .bottom)
+        }
+        .ignoresSafeArea(edges: .bottom)
+        // 页面显隐永远硬切：容器这一层把动画钉死，任何来源的动画都别想让页面淡入淡出
+        .transaction { $0.animation = nil }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: max(98 - windowBottomInset, 0))
+        }
+        .overlay(alignment: .bottom) {
+            glassBar
+                .padding(.bottom, barBottomPadding)
         }
         .onAppear {
             refreshWindowBottomInset()
             normalizeGlassOnAppear()
         }
         .onChange(of: currentPage) { mountedPages.insert($0) }
+    }
+
+    /// 底栏下边距（代码值）：渲染下边距 4 − 窗口底安全区活值（见 glassShell
+    /// 注释）；钳制下限 −安全区，保证渲染间隙不会被拉成负数
+    private var barBottomPadding: CGFloat {
+        max(4 - windowBottomInset, -windowBottomInset)
     }
 
     /// 底栏唯一的一根弹簧（Build 28 定版，照原生底栏的切换手感调的
@@ -429,10 +427,10 @@ struct ContentView: View {
     /// 尺寸审计（Build 28）：全栏只有一个尺寸数 64——胶囊高、出处圆钮直径、
     /// 搜索圆钮直径、槽位项高全是它（代码常量和用户截图上量到的渲染高度
     /// 都是 64、上下边对齐）；选中胶囊高 52、圆钮高亮 60 是在 64 里留的
-    /// 边距（上下各 6 / 各 2），不是第二个尺寸。栏的纵向位置是绝对值：
-    /// 本体高 64，由 glassShell 的底栏层显式定位：胶囊底边离物理底边 4
-    /// （栏占 [4, 68]，Build 31——贴底停靠，和 GitHub 那种原生栏一样沉进
-    /// 主屏幕指示条区，指示条压在胶囊下部玻璃上）。
+    /// 边距（上下各 6 / 各 2），不是第二个尺寸。栏的纵向位置（Build 32）：
+    /// 本体高 64，挂页面层的 overlay 底部锚，下边距 = 4 − 窗口底安全区
+    /// 活值，渲染下边距恰好 4——栏占 [4, 68]，贴底停靠，和 GitHub 那种
+    /// 原生栏一样沉进主屏幕指示条区，指示条压在胶囊下部玻璃上。
     /// 换组时随进度插值的是胶囊玻璃的位置/宽度、出处字形的滑行和选中胶囊
     /// 的行程；其余槽位项各自永远用本组的静止帧，只淡入淡出、绝不横移；
     /// A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，永不叠压。
@@ -574,12 +572,13 @@ struct ContentView: View {
     }
 
     /// 页面在玻璃栏里的字形：账号 / 生成卡密用用户的模板图，其余页用线框 SF
-    /// 符号（和模板图的线条风格一致）：邮件 envelope、更新 arrow.up.circle、设置 gearshape
+    /// 符号（和模板图的线条风格一致）：邮件 envelope、更新 arrow.up.circle、版本管理 rectangle.stack、设置 gearshape
     private func barGlyph(for tab: AppTab) -> BarGlyph {
         if let asset = tab.customIconAsset { return .asset(asset) }
         switch tab {
         case .mail: return .system("envelope")
         case .update: return .system("arrow.up.circle")
+        case .versions: return .system("rectangle.stack")
         case .settings: return .system("gearshape")
         default: return .system(tab.icon)
         }
