@@ -261,6 +261,11 @@ if ($action === 'send_code') {
     $email = strtolower(trim($in['email'] ?? ''));
     $purpose = $in['purpose'] ?? 'register';
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) resp(false, ['error' => '邮箱格式不对']);
+    if ($purpose === 'reset') {
+        $st = $db->prepare("SELECT id FROM users WHERE email=?");
+        $st->execute([$email]);
+        if (!$st->fetch()) resp(false, ['error' => '该邮箱未注册']);
+    }
     $st = $db->prepare("SELECT created_at FROM email_codes WHERE email=? ORDER BY id DESC LIMIT 1");
     $st->execute([$email]);
     $last = $st->fetch(PDO::FETCH_ASSOC);
@@ -268,7 +273,11 @@ if ($action === 'send_code') {
     $code = gen_code(6);
     $st = $db->prepare("INSERT INTO email_codes (email,code,purpose,expires_at,used,created_at) VALUES (?,?,?,?,0,?)");
     $st->execute([$email, $code, $purpose, $now + 300, $now]);
-    $sent = send_qq_email($email, "LUIYo 注册验证码", "你的验证码是：" . $code . "，5分钟内有效。如非本人操作请忽略。");
+    if ($purpose === 'reset') {
+        $sent = send_qq_email($email, "LUIYo 重置密码验证码", "你正在重置 LUIYo 账号密码，验证码是：" . $code . "，5分钟内有效。如非本人操作请忽略，你的密码不会被更改。");
+    } else {
+        $sent = send_qq_email($email, "LUIYo 注册验证码", "你的验证码是：" . $code . "，5分钟内有效。如非本人操作请忽略。");
+    }
     if (!$sent) resp(false, ['error' => '邮件发送失败，稍后再试']);
     resp(true, ['msg' => '验证码已发送到邮箱']);
 }
@@ -294,6 +303,31 @@ if ($action === 'register') {
     $uid = $db->lastInsertId();
     $db->prepare("UPDATE email_codes SET used=1 WHERE id=?")->execute([$ec['id']]);
     resp(true, ['user_id' => (int)$uid, 'email' => $email, 'msg' => '注册成功，请登录']);
+}
+
+// ============ 找回密码（邮箱验证码重置） ============
+if ($action === 'reset_password') {
+    $email = strtolower(trim($in['email'] ?? ''));
+    $password = $in['password'] ?? '';
+    $code = trim($in['code'] ?? '');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) resp(false, ['error' => '邮箱格式不对']);
+    if (strlen($password) < 6) resp(false, ['error' => '密码至少6位']);
+    if (strlen($code) !== 6) resp(false, ['error' => '验证码是6位数字']);
+    $st = $db->prepare("SELECT * FROM email_codes WHERE email=? AND code=? AND purpose='reset' AND used=0 AND expires_at>? ORDER BY id DESC LIMIT 1");
+    $st->execute([$email, $code, $now]);
+    $ec = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$ec) resp(false, ['error' => '验证码不对或已过期']);
+    $st = $db->prepare("SELECT id FROM users WHERE email=?");
+    $st->execute([$email]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) resp(false, ['error' => '该邮箱未注册']);
+    $hash = password_hash($password, PASSWORD_BCRYPT);
+    // 改密码 + 踢掉已登录设备 + 清错误锁定；SVIP 与绑定的卡密不受影响
+    $db->prepare("UPDATE users SET password_hash=?, current_device_id='', failed_count=0, locked_until=0 WHERE id=?")
+       ->execute([$hash, $u['id']]);
+    $db->prepare("DELETE FROM device_confirms WHERE user_id=?")->execute([$u['id']]);
+    $db->prepare("UPDATE email_codes SET used=1 WHERE id=?")->execute([$ec['id']]);
+    resp(true, ['msg' => '密码已重置，请用新密码重新登录']);
 }
 
 // ============ 登录（含安全 1/2/3/5） ============
