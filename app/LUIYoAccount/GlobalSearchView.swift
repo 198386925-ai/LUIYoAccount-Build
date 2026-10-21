@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// 全局搜索（底栏搜索 tab 的内容）：首次出现时拉账号 / 卡密 / 邮件三份列表，
-/// 之后本地按关键词过滤、分组展示；点任意结果切到对应页面（底栏页直接切，
-/// 「更多」里的页由外壳切到更多 tab 并打开）
+/// 之后本地按关键词过滤、分组展示；点任意结果直接切到对应页面的 tab
 struct GlobalSearchView: View {
     @EnvironmentObject var api: AccountAPI
     let onSelect: (AppTab) -> Void
