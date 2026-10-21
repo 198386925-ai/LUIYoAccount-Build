@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 外观：全局字体（从设置页搬入，行为不变）+ 底栏排序（前 3 个进底栏，其余收进「更多」）
+/// 外观：全局字体（从设置页搬入，行为不变）+ 底栏排序（四个标签页的先后顺序）
 struct AppearanceView: View {
     @EnvironmentObject var fontStore: FontStore
     @EnvironmentObject var tabOrder: TabOrderStore
@@ -60,7 +60,7 @@ struct AppearanceView: View {
             }
 
             Section {
-                ForEach(Array(tabOrder.order.enumerated()), id: \.element.id) { idx, tab in
+                ForEach(tabOrder.order) { tab in
                     HStack(spacing: 10) {
                         Group {
                             if let asset = tab.customIconAsset {
@@ -76,9 +76,6 @@ struct AppearanceView: View {
                         .frame(width: 24)
                         Text(tab.title)
                         Spacer()
-                        Text(idx < 3 ? "显示中" : "在更多里")
-                            .appFont(.caption)
-                            .foregroundColor(.secondary)
                     }
                 }
                 .onMove { tabOrder.move(from: $0, to: $1) }
@@ -86,7 +83,7 @@ struct AppearanceView: View {
                 AppSectionHeader("底栏排序")
             }
             Section {
-                Text("前 3 个进底栏，其余收进「更多」；点右上角编辑后拖动排序，底栏立即更新。")
+                Text("底栏就这四个标签；点右上角编辑后拖动排序，底栏立即更新。邮件和应用更新在设置页里，不占底栏。")
                     .appFont(.footnote)
                     .foregroundColor(.secondary)
             }

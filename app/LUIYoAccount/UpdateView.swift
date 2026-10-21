@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 应用更新：查看线上版本 + 上传主 App 的 IPA（走 app-update.php，与账号管理同一密码）
+/// 应用更新：查看线上版本 + 上传主 App 的 IPA（走 app-update.php，与账号管理同一密码）。
+/// Build 34 起不是底栏页：从设置页推送打开，不再自带 NavigationView（借设置页的导航栈，和外观同款）
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -20,80 +21,78 @@ struct UpdateView: View {
     @State private var resultOK = false
 
     var body: some View {
-        NavigationView {
-            Form {
-                Section {
-                    if let l = latest {
-                        LabeledContent("最新版本", value: l.tagName)
-                        LabeledContent("安装包", value: l.assetName)
-                        LabeledContent("大小", value: sizeText(l.assetSize))
-                        if let b = l.body, !b.isEmpty {
-                            Text(b).appFont(.footnote).foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text(latestLoaded ? "尚未发布任何版本" : "读取中…")
-                            .foregroundColor(.secondary)
+        Form {
+            Section {
+                if let l = latest {
+                    LabeledContent("最新版本", value: l.tagName)
+                    LabeledContent("安装包", value: l.assetName)
+                    LabeledContent("大小", value: sizeText(l.assetSize))
+                    if let b = l.body, !b.isEmpty {
+                        Text(b).appFont(.footnote).foregroundColor(.secondary)
                     }
-                    Button("刷新") { Task { await loadLatest() } }
-                } header: {
-                    AppSectionHeader("线上版本（主 App 更新源）")
+                } else {
+                    Text(latestLoaded ? "尚未发布任何版本" : "读取中…")
+                        .foregroundColor(.secondary)
                 }
+                Button("刷新") { Task { await loadLatest() } }
+            } header: {
+                AppSectionHeader("线上版本（主 App 更新源）")
+            }
 
-                Section {
-                    Button {
-                        showPicker = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.badge.plus")
-                            Text(pickedURL == nil ? "选择 IPA 文件" : "重新选择")
-                        }
+            Section {
+                Button {
+                    showPicker = true
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.plus")
+                        Text(pickedURL == nil ? "选择 IPA 文件" : "重新选择")
                     }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    if pickedURL != nil {
-                        LabeledContent("文件", value: pickedName)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        LabeledContent("大小", value: sizeText(pickedSize))
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    }
-                    TextField("版本号（留空自动识别）", text: $version)
-                        .keyboardType(.numbersAndPunctuation)
-                        .autocorrectionDisabled()
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    TextField("构建号（留空自动识别）", text: $build)
-                        .keyboardType(.numberPad)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    TextField("更新说明（可空）", text: $notes)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    Button {
-                        Task { await doUpload() }
-                    } label: {
-                        HStack {
-                            if uploading { ProgressView() }
-                            Text(uploading ? "上传中…" : "上传并发布")
-                        }
-                    }
-                    .disabled(pickedURL == nil || uploading)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    if let m = resultMsg {
-                        Text(m).appFont(.footnote)
-                            .foregroundColor(resultOK ? .green : .red)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    }
-                } header: {
-                    AppSectionHeader("上传新 IPA")
                 }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                if pickedURL != nil {
+                    LabeledContent("文件", value: pickedName)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    LabeledContent("大小", value: sizeText(pickedSize))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+                TextField("版本号（留空自动识别）", text: $version)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                TextField("构建号（留空自动识别）", text: $build)
+                    .keyboardType(.numberPad)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                TextField("更新说明（可空）", text: $notes)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                Button {
+                    Task { await doUpload() }
+                } label: {
+                    HStack {
+                        if uploading { ProgressView() }
+                        Text(uploading ? "上传中…" : "上传并发布")
+                    }
+                }
+                .disabled(pickedURL == nil || uploading)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                if let m = resultMsg {
+                    Text(m).appFont(.footnote)
+                        .foregroundColor(resultOK ? .green : .red)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+            } header: {
+                AppSectionHeader("上传新 IPA")
+            }
 
+        }
+        .compactSectionSpacing()
+        .navigationTitle("应用更新")
+        .sheet(isPresented: $showPicker) {
+            IPADocumentPicker { url in
+                if let url = url { adopt(url) }
             }
-            .compactSectionSpacing()
-            .navigationTitle("应用更新")
-            .sheet(isPresented: $showPicker) {
-                IPADocumentPicker { url in
-                    if let url = url { adopt(url) }
-                }
-            }
-            .task {
-                await loadLatest()
-            }
+        }
+        .task {
+            await loadLatest()
         }
     }
 

@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// 设置：外观入口（全局字体 + 底栏排序在里面）/ 服务器信息 / 本机版本 / 退出登录
+/// 设置：外观入口（全局字体 + 底栏排序在里面）/ 邮件、应用更新入口
+/// （Build 34 从底栏搬入，就在外观下面，和外观同一个导航栈推送打开；
+/// 邮件 / 应用更新两行带 selection 绑定，全局搜索点中它们时外壳经
+/// SettingsNavRouter 置位，这里接住自动推页）/ 服务器信息 / 本机版本 / 退出登录
 struct SettingsView: View {
     @EnvironmentObject var api: AccountAPI
+    @EnvironmentObject var settingsNav: SettingsNavRouter
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -19,6 +23,16 @@ struct SettingsView: View {
                         AppearanceView()
                     } label: {
                         Label("外观", systemImage: "paintpalette.fill")
+                    }
+                    NavigationLink(destination: MailLogView(),
+                                   tag: SettingsPushTarget.mail,
+                                   selection: $settingsNav.route) {
+                        Label("邮件", systemImage: "envelope.fill")
+                    }
+                    NavigationLink(destination: UpdateView(),
+                                   tag: SettingsPushTarget.update,
+                                   selection: $settingsNav.route) {
+                        Label("应用更新", systemImage: "arrow.up.circle.fill")
                     }
                 }
                 Section {

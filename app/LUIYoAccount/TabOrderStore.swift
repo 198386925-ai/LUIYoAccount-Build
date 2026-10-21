@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// 底栏页面标识：六个页面的顺序由 TabOrderStore 统一管理，
-/// 底栏（前 3 个 + 更多）和外观页的「底栏排序」共用同一份顺序
+/// 页面标识（六个页面共用一套）：账号 / 生成卡密 / 版本管理 / 设置是底栏
+/// 标签页，顺序由 TabOrderStore 管理；邮件 / 应用更新不是标签页——它们是
+/// 设置页里外观下面的入口行（Build 34 从底栏搬入），标识保留给全局搜索
+/// 结果和设置页推送路由用
 enum AppTab: String, CaseIterable, Identifiable {
     case accounts, cards, mail, update, versions, settings
 
@@ -38,10 +40,21 @@ enum AppTab: String, CaseIterable, Identifiable {
         default: return nil
         }
     }
+
+    /// 是底栏标签页的四个（邮件 / 应用更新不是，它们在设置页里）
+    var isTabPage: Bool {
+        switch self {
+        case .accounts, .cards, .versions, .settings: return true
+        case .mail, .update: return false
+        }
+    }
 }
 
-/// 底栏顺序仓库：UserDefaults 持久化（tabOrderV1），默认 账号/生成卡密/邮件/应用更新/版本管理/设置；
-/// 改动立即写盘，底栏和排序列表都观察这一份数据
+/// 底栏顺序仓库：UserDefaults 持久化（tabOrderV1），只管四个标签页的顺序，
+/// 默认 账号/生成卡密/版本管理/设置；改动立即写盘，底栏和外观页的
+/// 「底栏排序」共用同一份顺序。
+/// Build 34 迁移：老存档里有六页（含已搬进设置页的邮件 / 应用更新）——
+/// 读档时剔除这两个，其余页的相对顺序原样保留，缺的标签页补到末尾
 @MainActor
 final class TabOrderStore: ObservableObject {
     @Published var order: [AppTab] {
@@ -49,29 +62,20 @@ final class TabOrderStore: ObservableObject {
     }
 
     private static let key = "tabOrderV1"
+    /// 全部标签页（默认顺序 = 迁移补齐顺序）
+    static let tabPages: [AppTab] = [.accounts, .cards, .versions, .settings]
 
     init() {
         let saved = (UserDefaults.standard.array(forKey: Self.key) as? [String]) ?? []
-        var list = saved.compactMap { AppTab(rawValue: $0) }
-        // 去重 + 补齐缺失页面，保证六个页面都在且只出现一次；版本管理是
-        // Build 32 新增的页，老存档里没有它——补的时候插在应用更新后面
-        // （和默认顺序一致），其余缺失页照旧补到末尾，用户自定义的顺序不动
+        var list = saved.compactMap { AppTab(rawValue: $0) }.filter { $0.isTabPage }
+        // 去重 + 补齐缺失的标签页（补到末尾，用户自定义的顺序不动）
         var seen = Set<AppTab>()
         list = list.filter { seen.insert($0).inserted }
-        for t in AppTab.allCases where !list.contains(t) {
-            if t == .versions, let i = list.firstIndex(of: .update) {
-                list.insert(t, at: i + 1)
-            } else {
-                list.append(t)
-            }
+        for t in Self.tabPages where !list.contains(t) {
+            list.append(t)
         }
         order = list
     }
-
-    /// 底栏直接显示的前 3 个
-    var barTabs: [AppTab] { Array(order.prefix(3)) }
-    /// 收进「更多」的其余页面
-    var moreTabs: [AppTab] { Array(order.dropFirst(3)) }
 
     func move(from source: IndexSet, to destination: Int) {
         order.move(fromOffsets: source, toOffset: destination)
