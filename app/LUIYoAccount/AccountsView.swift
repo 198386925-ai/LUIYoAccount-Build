@@ -7,13 +7,10 @@ import UIKit
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
-    /// 搜索胶囊离页面底边的距离（外壳注入）：胶囊浮在底栏上方、不和底栏重叠
-    @Environment(\.searchBarBottom) private var searchBarBottom
     @State private var list: [AccountUser] = []
     @State private var loading = false
     @State private var error: String?
     @State private var notice: String?
-    @State private var query = ""
     @State private var banTarget: AccountUser?
     @State private var banReason = ""
     @State private var filter: AccountFilter = .all
@@ -49,11 +46,7 @@ struct AccountsView: View {
         Binding(get: { filter.key }, set: { filter = AccountFilter(key: $0) ?? .all })
     }
 
-    var filtered: [AccountUser] {
-        guard !query.isEmpty else { return list }
-        let q = query.lowercased()
-        return list.filter { $0.email.lowercased().contains(q) }
-    }
+    var filtered: [AccountUser] { list }
 
     private var svipAccounts: [AccountUser] { filtered.filter { $0.svip } }
     private var freeAccounts: [AccountUser] { filtered.filter { !$0.svip } }
@@ -121,21 +114,11 @@ struct AccountsView: View {
                     }
                     .compactSectionSpacing()
                     .refreshable { await reload() }
-                    // 列表底部再留一条空带，末尾卡片滚到底也不被搜索胶囊盖住
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        Color.clear.frame(height: 56)
-                    }
                 }
             }
             .navigationTitle("账号管理")
-            // 搜索胶囊是页面自己的子视图（不再用 .searchable——它的系统搜索框在窗口层
-            // 贴底渲染，会和玻璃底栏重叠，见 SearchBarCapsule 注释）；显隐跟页面走，
-            // 位置由外壳注入的 searchBarBottom 钉在底栏上方 10pt
-            .overlay(alignment: .bottom) {
-                SearchBarCapsule(query: $query, prompt: "搜索邮箱")
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, searchBarBottom)
-            }
+            // 本页不放常驻搜索框（用户规矩：搜索框只有点开搜索才会显示）；找账号走
+            // 底栏搜索圆钮打开的全局搜索——它能搜账号/卡密/邮件并点结果直达本页
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("退出") { api.logout() }

@@ -19,7 +19,10 @@ enum BarGroup {
 ///   换到 B 组：刚才所在的页从胶囊里滑出来，变成胶囊左边一个独立玻璃圆钮，
 ///   胶囊里换成其余页；点圆钮回 A 组并选中那个页。整栏总宽恒定（左边距到搜索
 ///   圆钮右缘永不动）：B 组胶囊只让出出处圆钮 + 一个间隔的宽度，不大幅缩短。
-///   选中高亮是一块整槽宽的纯玻璃胶囊，带 glassEffectID、同组内切换时弹簧变形；
+///   选中高亮是一块整槽宽的玻璃透镜：它单独住一个 GlassEffectContainer、铺在栏
+///   本体的上面一层，用 .clear 玻璃和栏本体的 .regular 拉开明暗层次（和栏同住一
+///   个容器时两块玻璃会融成一体、透镜没有边界看不见——Build 16/17 的教训），带
+///   glassEffectID、同组内切换时弹簧变形；图标按钮在最上层、只有字形。
 ///   换组动画只动底栏几何（出处项滑出、B 组槽位摊开），页面一律同帧硬切不淡入淡出。
 ///   页面全部活在一个 ZStack 里（首次访问后挂载并保活），搜索是盖在上面的伪页面。
 /// - iOS 16–25：Build 15 的原生 TabView 外壳降级保留（五个页全部直排 + 搜索 tab）。
@@ -280,18 +283,20 @@ struct ContentView: View {
 
     // MARK: - 玻璃底栏（胶囊 + 出处圆钮 + 搜索圆钮，全系统玻璃）
 
-    /// 整栏活在一个 GlassEffectContainer 里，手工布局（槽位帧自己算）：
-    /// - 总宽恒定：左边距 16、搜索圆钮 56 钉在最右（中心 = 总宽 − 44），两组都不动；
-    ///   元素间隔 12。A 组胶囊从 16 到搜索左缘前 12；B 组胶囊让出出处圆钮（56）+ 一个
-    ///   间隔（12），即起点右移 68、宽度少 68——只少这一截，不大幅缩短
-    /// - 槽宽随进度在「A 组等分」与「B 组等分」之间插值，各组项骑着胶囊走；
-    ///   A 组字形在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显——动的是槽位帧，
-    ///   字形固定 23pt 永不叠压
-    /// - 出处项是独立的一项：中心在「A 组原槽位」与「左侧圆钮位（44）」之间插值，
-    ///   玻璃圆底随进度淡入、高亮胶囊宽度从整槽宽收成圆钮内径，看起来就是它从
-    ///   胶囊里滑出来变成圆钮（回 A 组时反向滑回合拢）
-    /// - 所有表面都是裸形状 + 系统 glassEffect：胶囊、选中高亮、圆底、搜索圆钮
-    ///   一律 .glassEffect(.regular.interactive())，没有任何颜色填充或自绘背景
+    /// 底栏分三层（从下到上），手工布局（槽位帧自己算）：
+    /// 1. 栏本体：一个 GlassEffectContainer 装胶囊条、出处圆底、搜索圆钮，全是裸
+    ///    形状 + .glassEffect(.regular.interactive())，没有任何颜色填充或自绘背景
+    /// 2. 选中透镜：独立的 GlassEffectContainer + 独立命名空间，整槽宽的 .clear
+    ///    玻璃胶囊骑在栏本体表面——Build 16/17 它和栏同住一个容器、同是 .regular
+    ///    玻璃，两块玻璃融成一体、透镜没有边界，真机截图里选中态只剩图标变蓝；
+    ///    分层 + 换 .clear 后它像原生底栏的选中透镜一样亮、透、有边。整层不吃点按
+    /// 3. 图标按钮：只有字形（选中变蓝读 currentPage，跟页面瞬间到位），点按逻辑不变
+    /// 几何：总宽恒定，左边距 16、搜索圆钮 56 钉在最右（中心 = 总宽 − 44），两组都
+    /// 不动；元素间隔 12。A 组胶囊从 16 到搜索左缘前 12；B 组胶囊让出出处圆钮
+    /// （56）+ 一个间隔（12），即起点右移 68、宽度少 68——只少这一截，不大幅缩短。
+    /// 槽宽随进度在「A 组等分」与「B 组等分」之间插值，各组项骑着胶囊走；A 组字形
+    /// 在进度前 35% 淡出、B 组字形 8% 起淡入 40% 全显，字形固定 23pt 永不叠压。
+    /// 出处项的圆底和透镜位置在「A 组原槽位」与「左侧圆钮位（44）」之间插值
     @available(iOS 26.0, *)
     private var glassBar: some View {
         GeometryReader { geo in
@@ -304,20 +309,41 @@ struct ContentView: View {
             let nb = CGFloat(max(tabOrder.moreTabs.count, 1))
             let slotW = pillW * ((1 - p) / na + p / nb)
             let slotWA = pillFull / na
-            GlassEffectContainer(spacing: 10) {
+            ZStack {
+                // 第一层：栏本体（胶囊条 + 出处圆底 + 搜索圆钮）
+                GlassEffectContainer(spacing: 10) {
+                    ZStack {
+                        Capsule()
+                            .foregroundStyle(.clear)
+                            .glassEffect(.regular.interactive(), in: Capsule())
+                            .frame(width: pillW, height: 56)
+                            .position(x: pillX + pillW / 2, y: 28)
+                        if p > 0.001 {
+                            Circle()
+                                .foregroundStyle(.clear)
+                                .glassEffect(.regular.interactive(), in: Circle())
+                                .frame(width: 56, height: 56)
+                                .position(x: originCenterX(slotWA: slotWA, p: p), y: 28)
+                                .opacity(p)
+                        }
+                        glassCircle(icon: "magnifyingglass", tinted: searchShown) {
+                            if searchShown { closeSearch() } else { openSearch() }
+                        }
+                        .position(x: gw - 44, y: 28)
+                    }
+                    .frame(width: gw, height: 56)
+                }
+                // 第二层：选中透镜（独立容器 + 独立玻璃，整层不吃点按）
+                GlassEffectContainer(spacing: 10) {
+                    selectionLens(pillX: pillX, slotW: slotW, slotWA: slotWA, p: p)
+                        .frame(width: gw, height: 56)
+                }
+                .allowsHitTesting(false)
+                // 第三层：图标按钮（只有字形）
                 ZStack {
-                    Capsule()
-                        .foregroundStyle(.clear)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                        .frame(width: pillW, height: 56)
-                        .position(x: pillX + pillW / 2, y: 28)
                     aBarItems(pillX: pillX, slotW: slotW, p: p)
                     bBarItems(pillX: pillX, slotW: slotW, p: p)
                     originBarItem(slotWA: slotWA, p: p)
-                    glassCircle(icon: "magnifyingglass", tinted: searchShown) {
-                        if searchShown { closeSearch() } else { openSearch() }
-                    }
-                    .position(x: gw - 44, y: 28)
                 }
                 .frame(width: gw, height: 56)
             }
@@ -326,33 +352,72 @@ struct ContentView: View {
         .frame(height: 56)
     }
 
+    /// 出处项中心：A 组原槽位 ↔ 左侧圆钮位（44），随换组进度插值
+    private func originCenterX(slotWA: CGFloat, p: CGFloat) -> CGFloat {
+        let idx = tabOrder.barTabs.firstIndex(of: originTab) ?? 0
+        let slotCenter = 16 + (CGFloat(idx) + 0.5) * slotWA
+        return slotCenter + (44 - slotCenter) * p
+    }
+
+    /// 出处项上的透镜宽度：整槽宽 ↔ 圆钮内径（52），随换组进度插值
+    private func originLensWidth(slotWA: CGFloat, p: CGFloat) -> CGFloat {
+        (slotWA - 8) + (52 - (slotWA - 8)) * p
+    }
+
+    /// 选中透镜（第二层的内容）：整槽宽的 .clear 玻璃胶囊，带 glassEffectID 在本层
+    /// 自己的命名空间里变形滑动；停在哪一格读 capsuleTab（带弹簧的那份状态）。
+    /// A 组项、出处项、B 组项的透镜帧和对应图标项的槽位帧完全一致，淡入淡出节奏
+    /// 也跟着各组走；capsuleTab 为 nil（搜索打开时）整层为空、没有透镜
+    @available(iOS 26.0, *)
+    private func selectionLens(pillX: CGFloat, slotW: CGFloat, slotWA: CGFloat, p: CGFloat) -> some View {
+        ZStack {
+            if let sel = capsuleTab {
+                if sel == originTab {
+                    lensCapsule(centerX: originCenterX(slotWA: slotWA, p: p),
+                                width: originLensWidth(slotWA: slotWA, p: p),
+                                opacity: 1)
+                } else if let idx = tabOrder.barTabs.firstIndex(of: sel) {
+                    lensCapsule(centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
+                                width: slotW - 8,
+                                opacity: swapFadeOut(p))
+                } else if let idx = tabOrder.moreTabs.firstIndex(of: sel) {
+                    lensCapsule(centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
+                                width: max(slotW - 8, 0),
+                                opacity: swapFadeIn(p))
+                }
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func lensCapsule(centerX: CGFloat, width: CGFloat, opacity: CGFloat) -> some View {
+        Capsule()
+            .foregroundStyle(.clear)
+            .glassEffect(.clear.interactive(), in: Capsule())
+            .glassEffectID("selection", in: glassNS)
+            .frame(width: width, height: 44)
+            .position(x: centerX, y: 28)
+            .opacity(opacity)
+    }
+
     /// 换组时 A 组字形的淡出：进度前 35% 内消失
     private func swapFadeOut(_ p: CGFloat) -> CGFloat { min(1, max(0, 1 - p / 0.35)) }
     /// B 组字形的淡入：稍晚起步、进度 40% 时全显，和淡出错开，字形永不同时抢眼
     private func swapFadeIn(_ p: CGFloat) -> CGFloat { min(1, max(0, (p - 0.08) / 0.32)) }
 
-    /// 胶囊里的一个图标项（手工定位）：字形固定 23pt 不变形，动的是中心和槽宽。
-    /// capsule = 整槽宽的纯玻璃高亮（宽 = 槽宽 − 8，高 44 = 胶囊高 56 − 12），带 glassEffectID；
-    /// 它挂在哪一格读 capsuleTab（带弹簧），图标变蓝读 currentPage（跟页面瞬间到位）
+    /// 胶囊里的一个图标项（最上层，手工定位）：只有字形——玻璃表面在栏本体层、
+    /// 选中透镜在透镜层，都不在按钮里。字形固定 23pt 不变形，动的是中心和槽宽；
+    /// 图标变蓝读 currentPage（跟页面瞬间到位）
     @available(iOS 26.0, *)
-    private func barItem(icon: String, capsule: Bool, capsuleWidth: CGFloat, tinted: Bool,
+    private func barItem(icon: String, tinted: Bool,
                          frameWidth: CGFloat, centerX: CGFloat, opacity: CGFloat,
                          hittable: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            ZStack {
-                if capsule {
-                    Capsule()
-                        .foregroundStyle(.clear)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                        .glassEffectID("selection", in: glassNS)
-                        .frame(width: capsuleWidth, height: 44)
-                }
-                Image(systemName: icon)
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(tinted ? Color.accentColor : Color.primary)
-            }
-            .frame(width: frameWidth, height: 56)
-            .contentShape(Rectangle())
+            Image(systemName: icon)
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(tinted ? Color.accentColor : Color.primary)
+                .frame(width: frameWidth, height: 56)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(opacity)
@@ -370,15 +435,13 @@ struct ContentView: View {
             ForEach(Array(tabOrder.barTabs.enumerated()), id: \.element) { idx, tab in
                 if tab != originTab {
                     barItem(icon: tab.icon,
-                            capsule: capsuleTab == tab,
-                            capsuleWidth: slotW - 8,
                             tinted: !searchShown && currentPage == tab,
                             frameWidth: slotW,
                             centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
                             opacity: op, hittable: hittable) { selectPage(tab) }
                 }
             }
-            barItem(icon: "ellipsis", capsule: false, capsuleWidth: 0, tinted: false,
+            barItem(icon: "ellipsis", tinted: false,
                     frameWidth: slotW,
                     centerX: pillX + (CGFloat(tabOrder.barTabs.count) + 0.5) * slotW,
                     opacity: op, hittable: hittable) { enterGroupB() }
@@ -393,8 +456,6 @@ struct ContentView: View {
         return ZStack {
             ForEach(Array(tabOrder.moreTabs.enumerated()), id: \.element) { idx, tab in
                 barItem(icon: tab.icon,
-                        capsule: capsuleTab == tab,
-                        capsuleWidth: max(slotW - 8, 0),
                         tinted: !searchShown && currentPage == tab,
                         frameWidth: slotW,
                         centerX: pillX + (CGFloat(idx) + 0.5) * slotW,
@@ -403,48 +464,30 @@ struct ContentView: View {
         }
     }
 
-    /// 出处项：A 组时就是出处页在胶囊里的那一格（和普通项无异），换组时沿水平线滑到
-    /// 胶囊左侧变成独立玻璃圆钮；圆底随进度淡入，高亮胶囊宽度从整槽宽收成圆钮内径。
+    /// 出处项按钮（最上层，只有字形）：A 组时就是出处页在胶囊里的那一格（和普通项
+    /// 无异），换组时沿水平线滑到胶囊左侧变成独立圆钮——圆底在栏本体层、透镜在
+    /// 透镜层，都跟着同一个进度走，这里只负责字形位置和点按。
     /// 点它：B 组时回 A 组，A 组时等于重选当前页（无副作用）
     @available(iOS 26.0, *)
     private func originBarItem(slotWA: CGFloat, p: CGFloat) -> some View {
-        let idx = tabOrder.barTabs.firstIndex(of: originTab) ?? 0
-        let slotCenter = 16 + (CGFloat(idx) + 0.5) * slotWA
-        let cx = slotCenter + (44 - slotCenter) * p
+        let cx = originCenterX(slotWA: slotWA, p: p)
         let frameW = slotWA + (56 - slotWA) * p
-        let capW = (slotWA - 8) + (52 - (slotWA - 8)) * p
         let hittable = !searchShown && !barAnimating
         return Button {
             if barGroup == .b { backToOrigin() } else { selectPage(originTab) }
         } label: {
-            ZStack {
-                if p > 0.001 {
-                    Circle()
-                        .foregroundStyle(.clear)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .frame(width: 56, height: 56)
-                        .opacity(p)
-                }
-                if capsuleTab == originTab {
-                    Capsule()
-                        .foregroundStyle(.clear)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                        .glassEffectID("selection", in: glassNS)
-                        .frame(width: capW, height: 44)
-                }
-                Image(systemName: originTab.icon)
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(!searchShown && currentPage == originTab ? Color.accentColor : Color.primary)
-            }
-            .frame(width: frameW, height: 56)
-            .contentShape(Rectangle())
+            Image(systemName: originTab.icon)
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(!searchShown && currentPage == originTab ? Color.accentColor : Color.primary)
+                .frame(width: frameW, height: 56)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .position(x: cx, y: 28)
         .allowsHitTesting(hittable)
     }
 
-    /// 独立玻璃圆钮：搜索（永远钉在最右，位置不动），系统玻璃——和胶囊同在一个容器里
+    /// 独立玻璃圆钮：搜索（永远钉在最右，位置不动），系统玻璃——住在栏本体层里
     @available(iOS 26.0, *)
     private func glassCircle(icon: String, tinted: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
