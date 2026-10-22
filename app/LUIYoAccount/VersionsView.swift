@@ -9,10 +9,11 @@ import SwiftUI
 /// 展开后是三行输入框直接改弹窗文案（提示 / 标题 / 原因——Build 36
 /// 改的只是输入框标签，后台字段 title/l2/l3 不变；输入框和之前完全
 /// 一样，不删不移），保存按钮写回（version_set 只带文案、
-/// 不带状态，后端保持当前状态）；保存下面另起一张独立卡放发布信息
-/// （Build 33 时在卡顶的信息块，Build 35 按用户要求挪到保存下面
-/// 的独立卡里；Build 41 起卡里只留「发布于」，更新说明不在本页
-/// 显示）。状态不在卡里改：对着标题行左滑出
+/// 不带状态，后端保持当前状态）；发布信息原是保存下面另起的一张
+/// 独立卡（Build 33 时在卡顶的信息块，Build 35 按用户要求挪到保存
+/// 下面；Build 41 起只留「发布于」）——Build 42 用户反馈展开后像
+/// 「多出一张卡」，把发布信息并回版本卡自己的展开区、整卡改成单个
+/// 单元格一面呈现（见 VersionEditCard）。状态不在卡里改：对着标题行左滑出
 /// 侧滑按钮（弹更新 / 禁用 / 恢复正常，按当前状态只显示适用的——和
 /// Build 32 以前版本行的侧滑同一套）。
 /// 行高按 Build 33 的压缩口径：输入行上下内边距 4（Build 32 是 7）。
@@ -139,8 +140,12 @@ struct VersionsView: View {
 }
 
 /// 单条版本的可收起编辑卡：标题行（只显示版本 + 状态胶囊）+ 展开后的
-/// 三行文案输入框、保存，保存下面一张独立信息卡；
-/// 状态不在卡里改——标题行左滑出侧滑按钮改状态（见文件头注释）
+/// 三行文案输入框、保存、发布信息，全部装在同一个单元格里（一张卡、
+/// 一面背景——Build 42 合并：此前输入框是同 Section 的独立行、发布
+/// 信息更是展开后另起的一张 Section 卡，正是用户说的「展开后多出
+/// 一张卡」）；展开走 StretchReveal（与账号卡同款动效：临界阻尼、
+/// 内容最终尺寸排版、被卡片自身生长的边界裁剪揭示）；
+/// 状态不在卡里改——对着卡左滑出侧滑按钮改状态（见文件头注释）
 private struct VersionEditCard: View {
     @EnvironmentObject var api: AccountAPI
     let entry: VersionEntry
@@ -171,13 +176,12 @@ private struct VersionEditCard: View {
         _l3 = State(initialValue: entry.l3)
     }
 
-    /// 发布信息行（保存下面独立卡的内容）：Build 41 起这张卡只剩这一
-    /// 行——用户要求版本管理里不再显示更新日志/更新说明（notes 字段
-    /// 后端照存、本页不再读来显示），只看发布时间
+    /// 发布信息行（Build 42 起并回本卡展开区底部，不再是独立卡）：
+    /// Build 41 起只剩这一行——用户要求版本管理里不再显示更新日志/
+    /// 更新说明（notes 字段后端照存、本页不再读来显示），只看发布时间
     private var publishedLine: String? {
         entry.publishedAt > 0 ? "发布于 " + entry.publishedText : nil
     }
-    private var hasInfo: Bool { publishedLine != nil }
 
     /// 有没有没保存的改动（拿输入框现值和服务器现值比）：保存按钮亮/灰看它
     private var dirty: Bool {
@@ -185,12 +189,19 @@ private struct VersionEditCard: View {
     }
 
     var body: some View {
-        Group {
-            Section {
-                // 标题行：版本号 · Build + 右侧状态胶囊（只显示，不加箭头）。
-                // 点它收起/展开；改状态的侧滑也挂在这一行上（弹更新 / 禁用 /
-                // 恢复正常，按当前状态只显示适用的；点了直接 version_set
-                // 只带状态，文案不动）
+        Section {
+            // Build 42 合并：整张卡只有一个单元格——标题行在上，展开区
+            // （三行输入框 + 保存 + 发布信息）在下，同处这一格、共用
+            // Section 的同一面卡背景。此前输入框是同 Section 里另起的
+            // 三行 + 保存行，发布信息更是展开后在下面再冒出来的一张
+            // 独立 Section 卡（下方原「发布信息独立卡」Section），看着
+            // 就像多出一张卡（用户原话）。标题行：版本号 · Build +
+            // 右侧状态胶囊（只显示，不加箭头）。点标题行收起/展开（编
+            // 辑模式时只勾选）；改状态的侧滑挂在整个单元格上（弹更新 /
+            // 禁用 / 恢复正常，按当前状态只显示适用的；点了直接
+            // version_set 只带状态，文案不动——和 Build 32 以前版本行
+            // 的侧滑同一套）
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 10) {
                     if editing {
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -207,74 +218,76 @@ private struct VersionEditCard: View {
                     if editing {
                         onToggleSelect()
                     } else {
-                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                        // 动效归 StretchReveal（临界阻尼拉伸，与账号卡
+                        // 同款），这里只翻状态（原 withAnimation 0.2 撤掉）
+                        expanded.toggle()
                     }
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                .swipeActions(edge: .trailing) {
-                    if !editing {
-                        if entry.state != "soft" {
-                            Button("弹更新") { Task { await setState("soft") } }
-                                .tint(.orange)
-                        }
-                        if entry.state != "banned" {
-                            Button("禁用") { Task { await setState("banned") } }
-                                .tint(.red)
-                        }
-                        if entry.state != "normal" {
-                            Button("恢复正常") { Task { await setState("normal") } }
-                                .tint(.gray)
-                        }
-                    }
-                }
-                if expanded && !editing {
-                    fieldRow("提示", placeholder: "弹窗标题", text: $title)
-                    fieldRow("标题", placeholder: "第二行文案", text: $l2)
-                    fieldRow("原因", placeholder: "第三行文案", text: $l3)
-                    // 保存按钮 = 账号页封禁按钮同款（Build 36）：整宽胶囊
-                    // 按钮（.borderedProminent）；有未保存改动时亮起，没改动 /
-                    // 已保存时置灰不可点（disabled 的系统灰，同封禁按钮口径）。
-                    // 已保存 / 报错反馈移到按钮下方一行（行为沿用之前）
-                    VStack(spacing: 6) {
-                        Button {
-                            Task { await save() }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("保存")
-                                if saving { ProgressView() }
+                StretchReveal(expanded: expanded && !editing) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Divider()
+                            .padding(.vertical, 4)
+                        editorField("提示", placeholder: "弹窗标题", text: $title)
+                        editorField("标题", placeholder: "第二行文案", text: $l2)
+                        editorField("原因", placeholder: "第三行文案", text: $l3)
+                        // 保存按钮 = 账号页封禁按钮同款（Build 36）：整宽
+                        // 胶囊按钮（.borderedProminent）；有未保存改动时
+                        // 亮起，没改动 / 已保存时置灰不可点（disabled 的
+                        // 系统灰，同封禁按钮口径）。已保存 / 报错反馈在
+                        // 按钮下方一行（行为沿用之前）
+                        VStack(spacing: 6) {
+                            Button {
+                                Task { await save() }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("保存")
+                                    if saving { ProgressView() }
+                                }
+                                .appFont(.body, weight: .semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 2)
                             }
-                            .appFont(.body, weight: .semibold)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 2)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(saving || !dirty)
+                            if saved {
+                                Text("已保存")
+                                    .appFont(.caption)
+                                    .foregroundColor(.green)
+                            } else if let err {
+                                Text(err)
+                                    .appFont(.caption)
+                                    .foregroundColor(.red)
+                                    .lineLimit(1)
+                            }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(saving || !dirty)
-                        if saved {
-                            Text("已保存")
-                                .appFont(.caption)
-                                .foregroundColor(.green)
-                        } else if let err {
-                            Text(err)
-                                .appFont(.caption)
-                                .foregroundColor(.red)
-                                .lineLimit(1)
-                        }
-                    }
-                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
-                }
-            }
-            // 发布信息独立卡（Build 35；Build 41 起只放「发布于」一行：
-            // 更新说明不在本页显示——见 publishedLine 上方注释）
-            if expanded && !editing && hasInfo {
-                Section {
-                    VStack(alignment: .leading, spacing: 3) {
+                        .padding(.top, 8)
+                        // 发布信息（Build 42 并回本卡）：展开区底部一行，
+                        // 和输入框同在一张卡里，不再是独立卡；只显示
+                        // 「发布于」，更新说明不在本页显示（Build 41 口径）
                         if let publishedLine {
                             Text(publishedLine)
                                 .appFont(.caption)
                                 .foregroundColor(.secondary)
+                                .padding(.top, 8)
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .swipeActions(edge: .trailing) {
+                if !editing {
+                    if entry.state != "soft" {
+                        Button("弹更新") { Task { await setState("soft") } }
+                            .tint(.orange)
+                    }
+                    if entry.state != "banned" {
+                        Button("禁用") { Task { await setState("banned") } }
+                            .tint(.red)
+                    }
+                    if entry.state != "normal" {
+                        Button("恢复正常") { Task { await setState("normal") } }
+                            .tint(.gray)
+                    }
                 }
             }
         }
@@ -295,7 +308,10 @@ private struct VersionEditCard: View {
             .cornerRadius(8)
     }
 
-    private func fieldRow(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+    /// 展开区里的输入行（Build 42）：不再是独立的列表行，而是卡内
+    /// 一行——上下 4pt 内边距沿用原来行口径（Build 33 压缩口径）；
+    /// 标签字号原本就是 .body（17 档，与卡面同档），Build 42 不动
+    private func editorField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
         HStack(spacing: 10) {
             Text(label)
                 .appFont(.body)
@@ -303,7 +319,7 @@ private struct VersionEditCard: View {
             TextField(placeholder, text: text)
                 .autocorrectionDisabled()
         }
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .padding(.vertical, 4)
     }
 
     /// 侧滑改状态：version_set 只带状态（不带文案），改完用回传列表刷新整页

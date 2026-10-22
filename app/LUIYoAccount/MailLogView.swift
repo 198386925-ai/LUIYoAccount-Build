@@ -6,6 +6,9 @@ import SwiftUI
 /// 点卡展开才显示主题 / 时间
 /// Build 40：展开/收起改成拉伸动效（StretchReveal，与账号卡同款），内容不变；
 /// 展开显示的就是后端 mail_log 已返回的全部剩余字段（主题 + 时间），没有新增字段
+/// Build 42：邮件行同为单单元格（一张卡面，邮箱与详情同处一行）；详情
+/// 正文（主题 / 时间）从 caption/caption2 升到 headline 档（与账号卡
+/// 详情同口径，用户：展开的字再大一些），卡面邮箱与状态胶囊不变
 struct MailLogView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -34,14 +37,14 @@ struct MailLogView: View {
                             // 详情只在展开时显示：主题 + 时间（原来的小字行，原样）
                             // Build 40：显隐改走 StretchReveal 拉伸动效（与账号卡同款）
                             StretchReveal(expanded: expanded) {
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     if !m.subject.isEmpty {
                                         Text(m.subject)
-                                            .appFont(.caption)
+                                            .appFont(.headline, weight: .regular)
                                             .foregroundColor(.secondary)
                                     }
                                     Text(m.createdText)
-                                        .appFont(.caption2)
+                                        .appFont(.headline, weight: .regular)
                                         .foregroundColor(.secondary)
                                 }
                             }

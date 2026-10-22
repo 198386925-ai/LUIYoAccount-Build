@@ -11,6 +11,9 @@ import UniformTypeIdentifiers
 /// Build 41：历史版本条目改可收起——收起只剩版本 · Build + 发布时间，
 /// 更新说明点开拉伸展开才显示（Build 40 时是常显的）；本页的说明剥
 /// 前缀逻辑（historyNotesText）只服务展开内容
+/// Build 42：两处说明展开区与各自的卡面同处一个单元格（一张卡）；
+/// 说明正文从 footnote 升到 headline 档（用户：展开的字再大一些），
+/// 卡面行（最新版本 / 版本 · Build / 发布于）字号一律不变
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -59,7 +62,8 @@ struct UpdateView: View {
                             .contentShape(Rectangle())
                             .onTapGesture { notesExpanded.toggle() }
                             StretchReveal(expanded: notesExpanded) {
-                                Text(b).appFont(.footnote).foregroundColor(.secondary)
+                                // Build 42：说明正文升 headline 档（原 footnote）
+                                Text(b).appFont(.headline, weight: .regular).foregroundColor(.secondary)
                             }
                         }
                     }
@@ -146,7 +150,7 @@ struct UpdateView: View {
                             if hasNotes {
                                 StretchReveal(expanded: isOpen) {
                                     Text(historyNotesText(v.notes))
-                                        .appFont(.footnote)
+                                        .appFont(.headline, weight: .regular)
                                         .foregroundColor(.secondary)
                                 }
                             }

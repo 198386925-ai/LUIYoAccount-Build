@@ -57,6 +57,10 @@ private struct StretchHeightKey: PreferenceKey {
 /// Build 35：账号卡可收起——收起只显示邮箱 + 右侧标识（免费/SVIP/已封禁，
 /// 不加箭头），点卡展开才显示注册/最后登录/UDID/越狱允许等详情行
 /// Build 40：展开/收起改成拉伸动效（StretchReveal），内容不变
+/// Build 42：用户反馈展开后像「多出一张卡」——本页核查后确认账号行
+/// 本就是单单元格（邮箱与详情同在一行、共用卡面），观感靠两点收紧：
+/// 展开区顶部加卡内细线（定稿预览同款）、详情正文字号升到 headline
+/// 档；真正的双卡结构在版本管理页（已在 VersionsView 合并）
 struct AccountsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -203,19 +207,25 @@ struct AccountsView: View {
                     .lineLimit(1)
                 // 详情只在展开时显示（Build 35）：收起 = 邮箱 + 右侧标识，不加箭头
                 // Build 40：显隐改走 StretchReveal 拉伸动效，内容一字未变
+                // Build 42：详情和邮箱同处这一行单元格（一张卡面，无独立
+                // 背景块）；展开区顶部加一条卡内细线（照定稿预览），详情
+                // 正文从 caption/caption2 升到与邮箱同档的 headline 档
+                // （用户：展开的字再大一些）——只升字号档，颜色/内容不变
                 StretchReveal(expanded: expanded) {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Divider()
+                            .padding(.vertical, 4)
                         if u.isBanned && !u.banReason.isEmpty {
                             Text("封禁理由：" + u.banReason)
-                                .appFont(.caption)
+                                .appFont(.headline, weight: .regular)
                                 .foregroundColor(.red)
                         }
                         Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
-                            .appFont(.caption)
+                            .appFont(.headline, weight: .regular)
                             .foregroundColor(.secondary)
                         if !u.udid.isEmpty {
                             Text("UDID " + u.udid)
-                                .appFont(.caption2, design: .monospaced)
+                                .appFont(.headline, weight: .regular, design: .monospaced)
                                 .foregroundColor(.secondary)
                                 .textSelection(.enabled)
                         }
@@ -229,7 +239,7 @@ struct AccountsView: View {
                                 Text("SVIP 到期 " + u.svipExpiresText)
                             }
                         }
-                        .appFont(.caption)
+                        .appFont(.headline, weight: .regular)
                         .foregroundColor(.secondary)
                     }
                 }
