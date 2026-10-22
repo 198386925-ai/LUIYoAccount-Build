@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// 设置：外观入口（全局字体 + 底栏排序在里面）/ 邮件、应用更新入口
+/// 设置：外观入口（全局字体 + 底栏排序在里面）/ 邮件、版本管理入口
 /// （Build 34 从底栏搬入，就在外观下面，和外观同一个导航栈推送打开；
-/// 邮件 / 应用更新两行带 selection 绑定，全局搜索点中它们时外壳经
-/// SettingsNavRouter 置位，这里接住自动推页）/ 服务器（Build 36：
+/// 邮件 / 版本管理两行带 selection 绑定，全局搜索点中它们时外壳经
+/// SettingsNavRouter 置位，这里接住自动推页；Build 39：原「应用更新」
+/// 入口改名「版本管理」，落点是 VersionHubView——页内分类切换
+/// 应用更新 / 版本管理两段内容）/ 服务器（Build 36：
 /// 一张卡——卡内首行「服务器」整行就是开关，点它收起/展开卡内三行；
 /// Build 38：默认收起，首行右端加箭头指示收起/展开状态）/
 /// 本机版本 / 退出登录
@@ -35,10 +37,10 @@ struct SettingsView: View {
                                    selection: $settingsNav.route) {
                         Label("邮件", systemImage: "envelope.fill")
                     }
-                    NavigationLink(destination: UpdateView(),
+                    NavigationLink(destination: VersionHubView(),
                                    tag: SettingsPushTarget.update,
                                    selection: $settingsNav.route) {
-                        Label("应用更新", systemImage: "arrow.up.circle.fill")
+                        Label("版本管理", systemImage: "rectangle.stack.fill")
                     }
                 }
                 Section {

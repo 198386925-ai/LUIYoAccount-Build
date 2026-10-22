@@ -7,9 +7,10 @@ enum ShellTab: Hashable {
     case search
 }
 
-/// 设置页待推送目标：全局搜索点中邮件 / 应用更新时，先切到设置 tab，
-/// 再把路由置位——设置页里那两个入口行是带 selection 绑定的 NavigationLink，
-/// 接住后推页；用户返回时系统把 selection 写回 nil，等于用完即清
+/// 设置页待推送目标：全局搜索点中邮件 / 版本管理（原应用更新入口）时，
+/// 先切到设置 tab，再把路由置位——设置页里那两个入口行是带 selection
+/// 绑定的 NavigationLink，接住后推页；用户返回时系统把 selection
+/// 写回 nil，等于用完即清
 enum SettingsPushTarget: Hashable {
     case mail, update
 }
@@ -22,12 +23,14 @@ final class SettingsNavRouter: ObservableObject {
 
 /// 外壳（Build 34 定版）：原生 SwiftUI TabView——底栏的玻璃、选中态、切换
 /// 全是系统自己的，零自绘栏代码（换组玻璃栏 Build 16–33 的整套机器已删除）：
-/// - 标签页只有四个：账号 / 生成卡密 / 版本管理 / 设置，顺序读 TabOrderStore
+/// - 标签页只有四个：账号 / 生成卡密 / 封禁 / 设置，顺序读 TabOrderStore
 ///   （外观页里可拖动排序）；外加一个搜索 tab，内容是全局搜索页。
+///   Build 39：封禁从账号页搬出坐版本管理的旧位置；版本管理退栏。
 /// - iOS 26：新 Tab 写法，搜索是 Tab(role: .search)——系统的独立搜索圆钮；
 ///   iOS 16–25：经典 tabItem 写法，搜索是普通「搜索」tab（老降级壳同款）。
-/// - 邮件 / 应用更新不在底栏：它们是设置页里外观下面的两个入口行（同一导航
-///   栈推送打开）；全局搜索点中它们时经 SettingsNavRouter 推页。
+/// - 邮件 / 版本管理不在底栏：它们是设置页里外观下面的两个入口行（同一
+///   导航栈推送打开；版本管理页内含应用更新 / 版本管理分类切换）；全局
+///   搜索点中它们时经 SettingsNavRouter 推页。
 /// 每个标签页的内容自带导航栈（各页自己的 NavigationView 不动）。
 struct ContentView: View {
     @EnvironmentObject var api: AccountAPI
@@ -95,6 +98,7 @@ struct ContentView: View {
         switch tab {
         case .accounts: AccountsView()
         case .cards: CardsView()
+        case .bans: BansView()
         case .mail: MailLogView()
         case .update: UpdateView()
         case .versions: VersionsView()
@@ -149,9 +153,9 @@ struct ContentView: View {
 
     // MARK: - 搜索跳转
 
-    /// 全局搜索点中结果：标签页（账号 / 卡密 / 版本管理 / 设置）→ 直接选中
-    /// 那个 tab；邮件 / 应用更新 → 切到设置 tab 并经路由推页（路由置位在前、
-    /// 切 tab 在后，同一帧完成，设置页一出现就接住推送）
+    /// 全局搜索点中结果：标签页（账号 / 卡密 / 封禁 / 设置）→ 直接选中
+    /// 那个 tab；邮件 / 版本管理 → 切到设置 tab 并经路由推页（路由置位
+    /// 在前、切 tab 在后，同一帧完成，设置页一出现就接住推送）
     private func navigateFromSearch(_ tab: AppTab) {
         switch tab {
         case .mail:

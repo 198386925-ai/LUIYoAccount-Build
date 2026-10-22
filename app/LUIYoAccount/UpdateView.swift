@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 /// 应用更新：查看线上版本 + 上传主 App 的 IPA（走 app-update.php，与账号管理同一密码）。
 /// Build 34 起不是底栏页：从设置页推送打开，不再自带 NavigationView（借设置页的导航栈，和外观同款）
+/// Build 39 起是设置页「版本管理」入口页（本文件末尾的 VersionHubView）
+/// 里的「应用更新」段：页标题归入口页统一给，不再自带 navigationTitle
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -86,7 +88,6 @@ struct UpdateView: View {
 
         }
         .compactSectionSpacing()
-        .navigationTitle("应用更新")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 // Build 37：刷新改到右上角胶囊按钮（和版本管理页同款），
@@ -182,5 +183,34 @@ struct IPADocumentPicker: UIViewControllerRepresentable {
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             onPick(nil)
         }
+    }
+}
+
+// MARK: - 版本管理入口页（Build 39）
+
+/// 设置页「版本管理」入口的落点：设置里原「应用更新」入口 Build 39
+/// 改名「版本管理」，页内顶部 PillSegmented 分类切换
+/// [应用更新 | 版本管理]，两段分别复用 UpdateView / VersionsView
+/// 本体（都不自带 NavigationView、都不自带页标题，借设置页导航栈）；
+/// 页标题统一是「版本管理」；默认停在「应用更新」段。两段的数据都走
+/// App 级缓存（Build 38），切段不回源
+struct VersionHubView: View {
+    @State private var segment = "update"
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PillSegmented(options: [("update", "应用更新"), ("versions", "版本管理")],
+                          selection: $segment)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+            if segment == "versions" {
+                VersionsView()
+            } else {
+                UpdateView()
+            }
+        }
+        .background(Color(UIColor.systemGroupedBackground))
+        .navigationTitle("版本管理")
     }
 }

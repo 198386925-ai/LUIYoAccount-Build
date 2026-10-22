@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// 版本管理（Build 32 从「应用更新」页拆出来，单独一个底栏页）：
+/// 版本管理（Build 32 从「应用更新」页拆出来；Build 39 起不再是底栏
+/// 页——和应用更新一起进设置页「版本管理」入口的分类切换，本页是其中
+/// 的「版本管理」段；不再自带 NavigationView（借设置页导航栈，和
+/// UpdateView 同款），页标题由入口页统一给「版本管理」）：
 /// 版本列表，一条版本一张可收起的卡（Build 35）：收起时只显示标题行
 /// （版本号 · Build + 右侧状态胶囊，只显示、不加箭头），点标题行展开——
 /// 展开后是三行输入框直接改弹窗文案（提示 / 标题 / 原因——Build 36
@@ -32,76 +35,73 @@ struct VersionsView: View {
     @State private var deleting = false
 
     var body: some View {
-        NavigationView {
-            Form {
-                if versions.isEmpty {
-                    Section {
-                        Text(loaded ? "暂无版本记录（在「应用更新」里发布一个新版本后自动生成；需新版 app-update.php）" : "读取中…")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                ForEach(versions) { v in
-                    VersionEditCard(entry: v,
-                                    editing: editing,
-                                    selected: selectedBuilds.contains(v.build),
-                                    onSaved: { _ in /* Build 38：回传列表已由 API 写进缓存 */ },
-                                    onToggleSelect: {
-                                        if selectedBuilds.contains(v.build) {
-                                            selectedBuilds.remove(v.build)
-                                        } else {
-                                            selectedBuilds.insert(v.build)
-                                        }
-                                    })
+        Form {
+            if versions.isEmpty {
+                Section {
+                    Text(loaded ? "暂无版本记录（在「应用更新」里发布一个新版本后自动生成；需新版 app-update.php）" : "读取中…")
+                        .foregroundColor(.secondary)
                 }
             }
-            .compactSectionSpacing()
-            .navigationTitle("版本管理")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(editing ? "完成" : "编辑") {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            editing.toggle()
-                            if !editing { selectedBuilds.removeAll() }
-                        }
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("刷新") { Task { await load(force: true) } }
-                }
+            ForEach(versions) { v in
+                VersionEditCard(entry: v,
+                                editing: editing,
+                                selected: selectedBuilds.contains(v.build),
+                                onSaved: { _ in /* Build 38：回传列表已由 API 写进缓存 */ },
+                                onToggleSelect: {
+                                    if selectedBuilds.contains(v.build) {
+                                        selectedBuilds.remove(v.build)
+                                    } else {
+                                        selectedBuilds.insert(v.build)
+                                    }
+                                })
             }
-            .safeAreaInset(edge: .bottom) {
-                if editing {
-                    HStack(spacing: 12) {
-                        Text("已选 \(selectedBuilds.count) 个")
-                            .appFont(.body)
-                        Spacer()
-                        Button(role: .destructive) {
-                            confirmDelete = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("删除")
-                                    .appFont(.body, weight: .semibold)
-                                if deleting { ProgressView() }
-                            }
-                        }
-                        .disabled(selectedBuilds.isEmpty || deleting)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(.bar)
-                }
-            }
-            .task { await load() }
-            .alert("删除选中的 \(selectedBuilds.count) 个版本？", isPresented: $confirmDelete) {
-                Button("删除", role: .destructive) { Task { await deleteSelected() } }
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text("删除后版本列表里不再有它们，弹窗状态同步清掉；已上传的 IPA 文件保留。")
-            }
-            .alert("版本管理", isPresented: .constant(errorText != nil)) {
-                Button("好") { errorText = nil }
-            } message: { Text(errorText ?? "") }
         }
+        .compactSectionSpacing()
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(editing ? "完成" : "编辑") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        editing.toggle()
+                        if !editing { selectedBuilds.removeAll() }
+                    }
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("刷新") { Task { await load(force: true) } }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if editing {
+                HStack(spacing: 12) {
+                    Text("已选 \(selectedBuilds.count) 个")
+                        .appFont(.body)
+                    Spacer()
+                    Button(role: .destructive) {
+                        confirmDelete = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("删除")
+                                .appFont(.body, weight: .semibold)
+                            if deleting { ProgressView() }
+                        }
+                    }
+                    .disabled(selectedBuilds.isEmpty || deleting)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.bar)
+            }
+        }
+        .task { await load() }
+        .alert("删除选中的 \(selectedBuilds.count) 个版本？", isPresented: $confirmDelete) {
+            Button("删除", role: .destructive) { Task { await deleteSelected() } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后版本列表里不再有它们，弹窗状态同步清掉；已上传的 IPA 文件保留。")
+        }
+        .alert("版本管理", isPresented: .constant(errorText != nil)) {
+            Button("好") { errorText = nil }
+        } message: { Text(errorText ?? "") }
     }
 
     /// 批量删除：按 build 逐个调后端 version_delete（每个回传最新列表，
