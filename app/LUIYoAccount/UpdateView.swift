@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 /// Build 34 起不是底栏页：从设置页推送打开，不再自带 NavigationView（借设置页的导航栈，和外观同款）
 /// Build 39 起是设置页「版本管理」入口页（本文件末尾的 VersionHubView）
 /// 里的「应用更新」段：页标题归入口页统一给，不再自带 navigationTitle
+/// Build 40：线上版本卡的更新说明改成可展开行（标题「更新说明」，拉伸
+/// 展开看全文）；页尾新增「历史版本」区（注册表全量，每条带更新说明）
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -23,6 +25,11 @@ struct UpdateView: View {
     @State private var uploading = false
     @State private var resultMsg: String?
     @State private var resultOK = false
+    /// 线上版本卡「更新说明」展开状态（Build 40，本地 UI 状态）
+    @State private var notesExpanded = false
+    /// 历史版本（Build 40）：直接读 App 级版本注册表缓存，与「版本管理」
+    /// 段同一份数据；本页 .task 里顺手拉一次（命中缓存零请求）
+    private var history: [VersionEntry] { api.versionsCache ?? [] }
 
     var body: some View {
         Form {
@@ -32,7 +39,23 @@ struct UpdateView: View {
                     LabeledContent("安装包", value: l.assetName)
                     LabeledContent("大小", value: sizeText(l.assetSize))
                     if let b = l.body, !b.isEmpty {
-                        Text(b).appFont(.footnote).foregroundColor(.secondary)
+                        // Build 40：原来「本次更新：…」整段直出，改成可展开的
+                        // 「更新说明」行（照定稿效果图）：收起只显示标题 + 箭头，
+                        // 点开拉伸看全文（StretchReveal，与账号卡同款动效）
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .center, spacing: 10) {
+                                Text("更新说明")
+                                Spacer(minLength: 6)
+                                Image(systemName: notesExpanded ? "chevron.down" : "chevron.right")
+                                    .appFont(.caption, weight: .semibold)
+                                    .foregroundColor(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { notesExpanded.toggle() }
+                            StretchReveal(expanded: notesExpanded) {
+                                Text(b).appFont(.footnote).foregroundColor(.secondary)
+                            }
+                        }
                     }
                 } else {
                     Text(latestLoaded ? "尚未发布任何版本" : "读取中…")
@@ -86,6 +109,33 @@ struct UpdateView: View {
                 AppSectionHeader("上传新 IPA")
             }
 
+            // 历史版本（Build 40）：注册表里发布过的全部版本（含线上当前
+            // 版本），每条显示版本号 · Build + 当时存的更新说明 + 发布时间；
+            // 数据与「版本管理」段共用缓存，注册表为空时整区不出
+            if !history.isEmpty {
+                Section {
+                    ForEach(history) { v in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(v.version) · Build \(v.build)")
+                                .appFont(.headline)
+                            if !v.notes.isEmpty {
+                                Text(historyNotesText(v.notes))
+                                    .appFont(.footnote)
+                                    .foregroundColor(.secondary)
+                            }
+                            if v.publishedAt > 0 {
+                                Text("发布于 " + v.publishedText)
+                                    .appFont(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    }
+                } header: {
+                    AppSectionHeader("历史版本")
+                }
+            }
+
         }
         .compactSectionSpacing()
         .toolbar {
@@ -103,7 +153,25 @@ struct UpdateView: View {
         }
         .task {
             await loadLatest()
+            await loadHistory()
         }
+    }
+
+    /// 历史版本数据：走版本注册表缓存（Build 38），拉不到（老后端）
+    /// 就整区不出，不在本页报错（版本管理段会给正式提示）
+    private func loadHistory() async {
+        _ = try? await api.versionsList()
+    }
+
+    /// 历史条目的更新说明：存量说明自带「本次更新：」前缀时先剥掉，
+    /// 这里只显示说明正文（与版本管理卡 notesLine 同一剥法）
+    private func historyNotesText(_ notes: String) -> String {
+        var n = notes
+        for p in ["本次更新：", "本次更新:"] where n.hasPrefix(p) {
+            n = String(n.dropFirst(p.count)).trimmingCharacters(in: .whitespaces)
+            break
+        }
+        return n
     }
 
     private func sizeText(_ n: Int) -> String {
@@ -150,6 +218,8 @@ struct UpdateView: View {
             resultMsg = "✅ 已发布：\(r.name ?? "")"
             // 刚发布了新版本：线上状态已变，回源刷新这一份
             await loadLatest(force: true)
+            // 注册表也多了一条（或同 build 被替换）：历史版本一并回源
+            _ = try? await api.versionsList(force: true)
         } catch {
             if !error.isCancelError {
                 resultOK = false

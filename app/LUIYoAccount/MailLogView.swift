@@ -4,6 +4,8 @@ import SwiftUI
 /// Build 34 起不是底栏页：从设置页推送打开，不再自带 NavigationView（借设置页的导航栈，和外观同款）
 /// Build 35：一封一卡可收起——收起只显示收件邮箱 + 右侧状态标识（不加箭头），
 /// 点卡展开才显示主题 / 时间
+/// Build 40：展开/收起改成拉伸动效（StretchReveal，与账号卡同款），内容不变；
+/// 展开显示的就是后端 mail_log 已返回的全部剩余字段（主题 + 时间），没有新增字段
 struct MailLogView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -30,15 +32,18 @@ struct MailLogView: View {
                             Text(m.toEmail)
                                 .appFont(.headline, weight: .bold)
                             // 详情只在展开时显示：主题 + 时间（原来的小字行，原样）
-                            if expanded {
-                                if !m.subject.isEmpty {
-                                    Text(m.subject)
-                                        .appFont(.caption)
+                            // Build 40：显隐改走 StretchReveal 拉伸动效（与账号卡同款）
+                            StretchReveal(expanded: expanded) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    if !m.subject.isEmpty {
+                                        Text(m.subject)
+                                            .appFont(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Text(m.createdText)
+                                        .appFont(.caption2)
                                         .foregroundColor(.secondary)
                                 }
-                                Text(m.createdText)
-                                    .appFont(.caption2)
-                                    .foregroundColor(.secondary)
                             }
                         }
                         Spacer(minLength: 6)
@@ -53,9 +58,8 @@ struct MailLogView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if expanded { expandedMails.remove(m.id) } else { expandedMails.insert(m.id) }
-                        }
+                        // Build 40：动效归 StretchReveal 的 spring 拉伸，这里只翻状态
+                        if expanded { expandedMails.remove(m.id) } else { expandedMails.insert(m.id) }
                     }
                     .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
                 }

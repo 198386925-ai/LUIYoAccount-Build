@@ -9,6 +9,7 @@
 //        表单字段: password, ipa(文件), version(可选), build(可选), notes(可选)
 //        版本/构建号不填时自动识别：IPA 内 Info.plist → 文件名兜底
 // 存储：同目录 updates/ 下存 IPA（规范名 LUIYo-<版本>-b<构建>.ipa）+ latest.json
+// 重复上传同版本+同构建时自动替换旧的（IPA 文件覆盖、注册表条目顶替，不产生重复行）
 // 更新源地址：https://你的域名/updates/latest.json（静态文件，App 直接读）
 // latest.json 为 GitHub Releases 风格，含 draft/prerelease 字段（App 强校验）
 // ============================================================
@@ -300,6 +301,14 @@ if ($action === 'upload_ipa') {
     rename($metaTmp, UPD_DIR . '/latest.json');
 
     // 新版本登记进注册表（置顶，状态 normal + 默认弹窗文案），再把已有版本的状态同步回新 latest.json
+    // Build 40：重复上传同 build 时自动替换——先剔除注册表里同 build 的旧
+    // 条目（注册表全系统以 build 为键，version_set / version_delete 同口径；
+    // 历史遗留的同 build 重复行也一并清掉），新条目顶替它，不再叠出重复行；
+    // 同名 IPA 文件在上面 move_uploaded_file 时已直接覆盖为最新一份，
+    // version_states 随后按新注册表重建，旧条目的状态/文案随之失效
+    $versions = array_values(array_filter($versions, function ($v) use ($build) {
+        return (string)($v['build'] ?? '') !== (string)$build;
+    }));
     array_unshift($versions, make_version_entry($version, $build, $notes));
     save_versions($versions);
     sync_version_states($versions);
