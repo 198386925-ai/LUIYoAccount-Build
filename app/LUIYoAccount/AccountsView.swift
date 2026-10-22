@@ -1,12 +1,19 @@
 import SwiftUI
 import UIKit
 
-/// 拉伸展开容器（Build 40）：内容按自然高度先量出来，容器高度在
-/// 0 ↔ 自然高度之间用 spring 拉动，内容裁剪跟随——展开 / 收起都是
-/// 平滑「拉伸」，不再是详情直接跳出来（Build 35~39 的瞬时显隐）。
-/// 账号卡 / 封禁行 / 邮件卡 / 更新说明共用同一套动效。量测靠背景
-/// GeometryReader 读内容固有高度（内容垂直方向 fixedSize 不吃父级
-/// 压缩）；展开状态只是本地 UI 状态，切换不触发任何回源
+/// 拉伸展开容器（Build 40；Build 41 按用户录的主 App 设置页视频重做
+/// 动效口径）：内容按自然高度先量出来、从一开始就按最终尺寸排版、
+/// 顶对齐钉住，容器高度在 0 ↔ 自然高度之间动画，内容被容器自己的
+/// 边界逐步裁剪揭示——整张卡是一面在长高，不是「内容淡入」也不是
+/// 「下面另长出一块」。Build 40 的两处偏差在 41 撤掉：① 详情单独的
+/// opacity 淡入淡出（视频里没有淡入，只有裁剪揭示）；② spring 欠
+/// 阻尼（dampingFraction 0.86）会过冲回弹，视频是平滑无回弹——改
+/// 临界阻尼（response 0.32 / dampingFraction 1.0，零过冲）+ 约
+/// 0.3s 的节奏，与主 App 卡片一致。高度动画在同一事务里驱动所在
+/// 行的行高，下面的行跟着一起滑。账号卡 / 封禁行 / 邮件卡 / 更新
+/// 说明 / 历史版本共用同一套动效。量测靠背景 GeometryReader 读内容
+/// 固有高度（内容垂直方向 fixedSize 不吃父级压缩）；展开状态只是
+/// 本地 UI 状态，切换不触发任何回源
 struct StretchReveal<Content: View>: View {
     let expanded: Bool
     let content: Content
@@ -28,8 +35,9 @@ struct StretchReveal<Content: View>: View {
             .onPreferenceChange(StretchHeightKey.self) { contentHeight = $0 }
             .frame(height: expanded ? contentHeight : 0, alignment: .top)
             .clipped()
-            .opacity(expanded ? 1 : 0)
-            .animation(.spring(response: 0.45, dampingFraction: 0.86), value: expanded)
+            // Build 41：去掉 Build 40 的 .opacity 淡入淡出（揭示只靠裁剪），
+            // 弹簧改临界阻尼防过冲回弹（口径见本结构体头部注释）
+            .animation(.spring(response: 0.32, dampingFraction: 1.0), value: expanded)
             .accessibilityHidden(!expanded)
     }
 }
@@ -448,7 +456,7 @@ struct BansView: View {
 
 // MARK: - 已封禁行（Build 40 可展开编辑）
 
-/// 已封禁列表的行：收起只显示账号邮箱 + 右侧箭头；点行拉伸展开
+/// 已封禁列表的行：收起只显示账号邮箱 + 授权标识 + 右侧箭头；点行拉伸展开
 /// （StretchReveal，与账号卡同款动效），展开后是标题 / 副标题 /
 /// 原因三个输入框 + 保存——保存走账号页封禁表单同一条 admin_ban
 /// 写接口（api.accountBan 带 title/subtitle），写完 API 就地改缓存
@@ -493,6 +501,9 @@ private struct BannedAccountRow: View {
                     .appFont(.headline)
                     .lineLimit(1)
                 Spacer(minLength: 6)
+                // Build 41：收起行右侧加授权标识（与账号行同数据源、同
+                // 样式的胶囊：SVIP 绿 / 免费灰），在箭头左边
+                statusTag
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
                     .appFont(.caption, weight: .semibold)
                     .foregroundColor(.secondary)
@@ -548,6 +559,18 @@ private struct BannedAccountRow: View {
         .onChange(of: title) { _ in saved = false }
         .onChange(of: subtitle) { _ in saved = false }
         .onChange(of: reason) { _ in saved = false }
+    }
+
+    /// 授权标识胶囊（Build 41）：与账号页账号行的 tag 同字号 / 同内边距 /
+    /// 同圆角 / 同配色——SVIP 绿底绿字，免费灰底灰字（已封禁标识在本页
+    /// 没有意义，人人都在封禁名单里，不重复显示）
+    private var statusTag: some View {
+        Text(user.svip ? "SVIP" : "免费")
+            .appFont(.caption)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(user.svip ? Color.green.opacity(0.15) : Color.gray.opacity(0.15))
+            .foregroundColor(user.svip ? Color.green : Color.secondary)
+            .cornerRadius(8)
     }
 
     private func editField(_ label: String, placeholder: String, text: Binding<String>) -> some View {

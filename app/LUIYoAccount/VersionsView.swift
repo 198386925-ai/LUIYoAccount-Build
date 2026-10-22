@@ -10,8 +10,9 @@ import SwiftUI
 /// 改的只是输入框标签，后台字段 title/l2/l3 不变；输入框和之前完全
 /// 一样，不删不移），保存按钮写回（version_set 只带文案、
 /// 不带状态，后端保持当前状态）；保存下面另起一张独立卡放发布信息
-/// （发布于 / 本次更新——Build 33 时在卡顶的信息块，Build 35 按用户
-/// 要求挪到保存下面的独立卡里）。状态不在卡里改：对着标题行左滑出
+/// （Build 33 时在卡顶的信息块，Build 35 按用户要求挪到保存下面
+/// 的独立卡里；Build 41 起卡里只留「发布于」，更新说明不在本页
+/// 显示）。状态不在卡里改：对着标题行左滑出
 /// 侧滑按钮（弹更新 / 禁用 / 恢复正常，按当前状态只显示适用的——和
 /// Build 32 以前版本行的侧滑同一套）。
 /// 行高按 Build 33 的压缩口径：输入行上下内边距 4（Build 32 是 7）。
@@ -170,21 +171,13 @@ private struct VersionEditCard: View {
         _l3 = State(initialValue: entry.l3)
     }
 
-    /// 发布信息行（保存下面独立卡的内容）：存的更新说明自带「本次更新：」
-    /// 前缀时先剥掉再拼标签，不然会显示成「本次更新： 本次更新：…」（Build 35 修）
+    /// 发布信息行（保存下面独立卡的内容）：Build 41 起这张卡只剩这一
+    /// 行——用户要求版本管理里不再显示更新日志/更新说明（notes 字段
+    /// 后端照存、本页不再读来显示），只看发布时间
     private var publishedLine: String? {
         entry.publishedAt > 0 ? "发布于 " + entry.publishedText : nil
     }
-    private var notesLine: String? {
-        guard !entry.notes.isEmpty else { return nil }
-        var n = entry.notes
-        for p in ["本次更新：", "本次更新:"] where n.hasPrefix(p) {
-            n = String(n.dropFirst(p.count)).trimmingCharacters(in: .whitespaces)
-            break
-        }
-        return "本次更新：" + n
-    }
-    private var hasInfo: Bool { publishedLine != nil || notesLine != nil }
+    private var hasInfo: Bool { publishedLine != nil }
 
     /// 有没有没保存的改动（拿输入框现值和服务器现值比）：保存按钮亮/灰看它
     private var dirty: Bool {
@@ -270,18 +263,13 @@ private struct VersionEditCard: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
                 }
             }
-            // 发布信息独立卡（Build 35）：展开后才在保存下面出现，自己一张卡，
-            // 只放发布于 / 本次更新两行只读小字（值空的那行不显示，两行都空整卡不出）
+            // 发布信息独立卡（Build 35；Build 41 起只放「发布于」一行：
+            // 更新说明不在本页显示——见 publishedLine 上方注释）
             if expanded && !editing && hasInfo {
                 Section {
                     VStack(alignment: .leading, spacing: 3) {
                         if let publishedLine {
                             Text(publishedLine)
-                                .appFont(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        if let notesLine {
-                            Text(notesLine)
                                 .appFont(.caption)
                                 .foregroundColor(.secondary)
                         }

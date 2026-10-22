@@ -33,13 +33,15 @@ struct CardsView: View {
                 .listRowBackground(Color.clear)
 
                 Section {
-                    HStack {
+                    // Build 41：数量值改左对齐——标签固定宽在左、值紧随其后
+                    // 从同一值列起（和封禁表单的字段同一排法），不再右对齐
+                    // 贴在行尾；字段与行为不变
+                    HStack(spacing: 10) {
                         Text("数量")
-                        Spacer()
+                            .frame(width: 52, alignment: .leading)
                         TextField("1–100", text: $countText)
                             .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 90)
+                            .multilineTextAlignment(.leading)
                     }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     VStack(alignment: .leading, spacing: 8) {
@@ -48,12 +50,12 @@ struct CardsView: View {
                                       selection: $daysValue)
                     }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                    HStack {
+                    // Build 41：备注同数量——左对齐，值从标签后同一列起
+                    HStack(spacing: 10) {
                         Text("备注")
-                        Spacer()
+                            .frame(width: 52, alignment: .leading)
                         TextField("用户名/用途…", text: $remarkText)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 180)
+                            .multilineTextAlignment(.leading)
                     }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     // 生成按钮 = 账号页封禁按钮同款（Build 36）：整宽胶囊按钮

@@ -8,6 +8,9 @@ import UniformTypeIdentifiers
 /// 里的「应用更新」段：页标题归入口页统一给，不再自带 navigationTitle
 /// Build 40：线上版本卡的更新说明改成可展开行（标题「更新说明」，拉伸
 /// 展开看全文）；页尾新增「历史版本」区（注册表全量，每条带更新说明）
+/// Build 41：历史版本条目改可收起——收起只剩版本 · Build + 发布时间，
+/// 更新说明点开拉伸展开才显示（Build 40 时是常显的）；本页的说明剥
+/// 前缀逻辑（historyNotesText）只服务展开内容
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -27,6 +30,9 @@ struct UpdateView: View {
     @State private var resultOK = false
     /// 线上版本卡「更新说明」展开状态（Build 40，本地 UI 状态）
     @State private var notesExpanded = false
+    /// 历史版本条目展开状态（Build 41）：按 build 记（VersionEntry.id
+    /// 就是 build），默认全收起，纯本地 UI 状态
+    @State private var expandedHistory: Set<String> = []
     /// 历史版本（Build 40）：直接读 App 级版本注册表缓存，与「版本管理」
     /// 段同一份数据；本页 .task 里顺手拉一次（命中缓存零请求）
     private var history: [VersionEntry] { api.versionsCache ?? [] }
@@ -109,24 +115,46 @@ struct UpdateView: View {
                 AppSectionHeader("上传新 IPA")
             }
 
-            // 历史版本（Build 40）：注册表里发布过的全部版本（含线上当前
-            // 版本），每条显示版本号 · Build + 当时存的更新说明 + 发布时间；
-            // 数据与「版本管理」段共用缓存，注册表为空时整区不出
+            // 历史版本（Build 40；Build 41 改可收起）：注册表里发布过的
+            // 全部版本（含线上当前版本）。收起时每条只显示版本号 ·
+            // Build + 发布时间；更新说明只在点开后出现（StretchReveal
+            // 拉伸展开，与账号卡同款动效）——Build 40 时说明是常显的，
+            // 41 按用户要求收进展开里。没有说明的条目不给箭头、点按
+            // 无反应；数据与「版本管理」段共用缓存，注册表为空时整
+            // 区不出
             if !history.isEmpty {
                 Section {
                     ForEach(history) { v in
+                        let isOpen = expandedHistory.contains(v.build)
+                        let hasNotes = !v.notes.isEmpty
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(v.version) · Build \(v.build)")
-                                .appFont(.headline)
-                            if !v.notes.isEmpty {
-                                Text(historyNotesText(v.notes))
-                                    .appFont(.footnote)
-                                    .foregroundColor(.secondary)
+                            HStack(alignment: .center, spacing: 10) {
+                                Text("\(v.version) · Build \(v.build)")
+                                    .appFont(.headline)
+                                Spacer(minLength: 6)
+                                if hasNotes {
+                                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                                        .appFont(.caption, weight: .semibold)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             if v.publishedAt > 0 {
                                 Text("发布于 " + v.publishedText)
                                     .appFont(.caption2)
                                     .foregroundColor(.secondary)
+                            }
+                            if hasNotes {
+                                StretchReveal(expanded: isOpen) {
+                                    Text(historyNotesText(v.notes))
+                                        .appFont(.footnote)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if hasNotes {
+                                if isOpen { expandedHistory.remove(v.build) } else { expandedHistory.insert(v.build) }
                             }
                         }
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -163,8 +191,8 @@ struct UpdateView: View {
         _ = try? await api.versionsList()
     }
 
-    /// 历史条目的更新说明：存量说明自带「本次更新：」前缀时先剥掉，
-    /// 这里只显示说明正文（与版本管理卡 notesLine 同一剥法）
+    /// 历史条目的更新说明（展开后显示）：存量说明自带「本次更新：」
+    /// 前缀时先剥掉，这里只显示说明正文
     private func historyNotesText(_ notes: String) -> String {
         var n = notes
         for p in ["本次更新：", "本次更新:"] where n.hasPrefix(p) {
