@@ -3,8 +3,9 @@ import SwiftUI
 /// 总览页（Build 43 建页，Build 44 从底栏退入设置页）：正常格式——
 /// NavigationView + Form + 分组，和账号/卡密/邮件页同一套骨架。全部按
 /// 「能折叠的尽量折叠」做：一行一格——每组本身是一行（标题 + headline
-/// 数字 + 箭头，整行可点），点它用 StretchReveal 拉伸展开，展开后每条
-/// 明细各占一格（独立小格子，不挤在一个块里），和账号卡同一套临界阻尼动效。
+/// 数字 + 箭头，整行可点），点开后每条明细就是标准表格的一行，不套
+/// 小格子（Build 44 套小格子的做法不对，已撤掉）；折叠走设置页服务器卡
+/// 同款：if + withAnimation 收放行，不是 StretchReveal。
 /// 数据只读 App 级缓存（账号/卡密/邮件三份，会话内零重复请求）；
 /// 今日验证沿 Build 38 的规矩：老后端没 captcha_today 字段整段不显示。
 struct OverviewView: View {
@@ -83,13 +84,11 @@ struct OverviewView: View {
     private var userSection: some View {
         Section {
             headerRow(key: "users", title: "用户 · 共 \(users.count)")
-            StretchReveal(expanded: expanded.contains("users")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    jumpRow("已授权", count: svipCount) { onJump(.accounts) }
-                    jumpRow("未授权", count: users.count - svipCount) { onJump(.accounts) }
-                    jumpRow("已封禁", count: bannedCount) { onJump(.bans) }
-                    jumpRow("今日新增", count: newTodayCount) { onJump(.accounts) }
-                }
+            if expanded.contains("users") {
+                jumpRow("已授权", count: svipCount) { onJump(.accounts) }
+                jumpRow("未授权", count: users.count - svipCount) { onJump(.accounts) }
+                jumpRow("已封禁", count: bannedCount) { onJump(.bans) }
+                jumpRow("今日新增", count: newTodayCount) { onJump(.accounts) }
             }
         }
     }
@@ -97,12 +96,10 @@ struct OverviewView: View {
     private var cardSection: some View {
         Section {
             headerRow(key: "cards", title: "卡密 · 共 \(cards.count)（已用 \(boundCount)）")
-            StretchReveal(expanded: expanded.contains("cards")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    jumpRow("已用", count: boundCount) { onJump(.cards) }
-                    jumpRow("未用", count: cards.count - boundCount) { onJump(.cards) }
-                    jumpRow("已作废", count: disabledCount) { onJump(.cards) }
-                }
+            if expanded.contains("cards") {
+                jumpRow("已用", count: boundCount) { onJump(.cards) }
+                jumpRow("未用", count: cards.count - boundCount) { onJump(.cards) }
+                jumpRow("已作废", count: disabledCount) { onJump(.cards) }
             }
         }
     }
@@ -110,11 +107,9 @@ struct OverviewView: View {
     private var mailSection: some View {
         Section {
             headerRow(key: "mail", title: "邮件 · 今日 \(mailsToday.count) 封")
-            StretchReveal(expanded: expanded.contains("mail")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    jumpRow("成功", count: mailsToday.filter { $0.ok }.count) { onJump(.mail) }
-                    jumpRow("失败", count: mailsToday.filter { !$0.ok }.count) { onJump(.mail) }
-                }
+            if expanded.contains("mail") {
+                jumpRow("成功", count: mailsToday.filter { $0.ok }.count) { onJump(.mail) }
+                jumpRow("失败", count: mailsToday.filter { !$0.ok }.count) { onJump(.mail) }
             }
         }
     }
@@ -122,11 +117,9 @@ struct OverviewView: View {
     private var captchaSection: some View {
         Section {
             headerRow(key: "captcha", title: "今日验证 · 共 \(captchaTotal) 次")
-            StretchReveal(expanded: expanded.contains("captcha")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(topCaptcha, id: \.0) { email, count in
-                        jumpRow(email, count: count) { onJump(.accounts) }
-                    }
+            if expanded.contains("captcha") {
+                ForEach(topCaptcha, id: \.0) { email, count in
+                    jumpRow(email, count: count) { onJump(.accounts) }
                 }
             }
         }
@@ -135,30 +128,24 @@ struct OverviewView: View {
     private var pendingSection: some View {
         Section {
             headerRow(key: "pending", title: "待处理 · \(flagged.count) 个")
-            StretchReveal(expanded: expanded.contains("pending")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    if flagged.isEmpty {
-                        detailCell {
-                            Text("暂无待处理")
-                                .appFont(.headline, weight: .regular)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    ForEach(flagged) { u in
-                        detailCell {
-                            HStack {
-                                Text(u.email)
-                                    .appFont(.headline, weight: .regular)
-                                    .lineLimit(1)
-                                Spacer()
-                                Button("取消标红") { run { try await api.accountUnflag(email: u.email) } }
-                                    .appFont(.headline, weight: .regular)
-                                    .foregroundColor(.green)
-                                Button("封禁") { run { try await api.accountBan(email: u.email, ban: true) } }
-                                    .appFont(.headline, weight: .regular)
-                                    .foregroundColor(.red)
-                            }
-                        }
+            if expanded.contains("pending") {
+                if flagged.isEmpty {
+                    Text("暂无待处理")
+                        .appFont(.headline, weight: .regular)
+                        .foregroundColor(.secondary)
+                }
+                ForEach(flagged) { u in
+                    HStack {
+                        Text(u.email)
+                            .appFont(.headline, weight: .regular)
+                            .lineLimit(1)
+                        Spacer()
+                        Button("取消标红") { run { try await api.accountUnflag(email: u.email) } }
+                            .appFont(.headline, weight: .regular)
+                            .foregroundColor(.green)
+                        Button("封禁") { run { try await api.accountBan(email: u.email, ban: true) } }
+                            .appFont(.headline, weight: .regular)
+                            .foregroundColor(.red)
                     }
                 }
             }
@@ -168,10 +155,13 @@ struct OverviewView: View {
     // MARK: - 小组件
 
     /// 可折叠分组的标题行：本身就是一行（标题 + headline 数字 + 箭头，
-    /// 整行可点），收起时这组就只剩这一行
+    /// 整行可点），收起时这组就只剩这一行；收放走设置页服务器卡同款
+    /// if + withAnimation
     private func headerRow(key: String, title: String) -> some View {
         Button {
-            if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
+            }
         } label: {
             HStack {
                 Text(title)
@@ -179,6 +169,7 @@ struct OverviewView: View {
                     .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: expanded.contains(key) ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
             }
             .contentShape(Rectangle())
@@ -186,31 +177,20 @@ struct OverviewView: View {
         .buttonStyle(.plain)
     }
 
-    /// 明细一格：每条明细各占一个独立小格子
-    private func detailCell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(12)
-    }
-
-    /// 跳转格：点格子跳到对应标签页（邮件走设置页的邮件入口路由）
+    /// 跳转行：标准表格的一行，点行跳到对应标签页（邮件走设置页的邮件入口路由）
     private func jumpRow(_ label: String, count: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            detailCell {
-                HStack {
-                    Text(label)
-                        .appFont(.headline, weight: .regular)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Spacer()
-                    Text("\(count)")
-                        .appFont(.headline)
-                        .foregroundColor(.primary)
-                }
+            HStack {
+                Text(label)
+                    .appFont(.headline, weight: .regular)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(count)")
+                    .appFont(.headline)
+                    .foregroundColor(.primary)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
