@@ -9,6 +9,7 @@ import SwiftUI
 /// Build 42：邮件行同为单单元格（一张卡面，邮箱与详情同处一行）；详情
 /// 正文（主题 / 时间）从 caption/caption2 升到 headline 档（与账号卡
 /// 详情同口径，用户：展开的字再大一些），卡面邮箱与状态胶囊不变
+/// Build 46：邮件行改标准表格行（总览同款），拉伸容器撤掉
 struct MailLogView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -29,42 +30,46 @@ struct MailLogView: View {
                 }
                 ForEach(logs) { m in
                     let expanded = expandedMails.contains(m.id)
-                    HStack(alignment: .center, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 1) {
+                    let insets = EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26)
+                    // Build 46：邮件行改标准表格行（总览同款）——标题行是一行
+                    // （邮箱 + 状态 + 箭头），点开后主题 / 时间各占标准的一行
+                    Group {
+                        HStack(alignment: .center, spacing: 10) {
                             // 收起标题行字号和账号卡的邮箱同口径（headline，Build 35）
                             Text(m.toEmail)
                                 .appFont(.headline, weight: .bold)
-                            // 详情只在展开时显示：主题 + 时间（原来的小字行，原样）
-                            // Build 40：显隐改走 StretchReveal 拉伸动效（与账号卡同款）
-                            StretchReveal(expanded: expanded) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if !m.subject.isEmpty {
-                                        Text(m.subject)
-                                            .appFont(.headline, weight: .regular)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Text(m.createdText)
-                                        .appFont(.headline, weight: .regular)
-                                        .foregroundColor(.secondary)
-                                }
+                            Spacer(minLength: 6)
+                            Text(m.ok ? "发送成功" : "发送失败")
+                                .appFont(.caption, weight: .bold)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(m.ok ? Color.green : Color.red)
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
+                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                .appFont(.caption, weight: .semibold)
+                                .foregroundColor(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if expanded { expandedMails.remove(m.id) } else { expandedMails.insert(m.id) }
                             }
                         }
-                        Spacer(minLength: 6)
-                        // 发送状态标识对整行上下居中（不再贴在邮箱那一行）
-                        Text(m.ok ? "发送成功" : "发送失败")
-                            .appFont(.caption, weight: .bold)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(m.ok ? Color.green : Color.red)
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
+                        .listRowInsets(insets)
+                        if expanded {
+                            if !m.subject.isEmpty {
+                                Text(m.subject)
+                                    .appFont(.headline, weight: .regular)
+                                    .foregroundColor(.secondary)
+                                    .listRowInsets(insets)
+                            }
+                            Text(m.createdText)
+                                .appFont(.headline, weight: .regular)
+                                .foregroundColor(.secondary)
+                                .listRowInsets(insets)
+                        }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Build 40：动效归 StretchReveal 的 spring 拉伸，这里只翻状态
-                        if expanded { expandedMails.remove(m.id) } else { expandedMails.insert(m.id) }
-                    }
-                    .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
                 }
             }
         }

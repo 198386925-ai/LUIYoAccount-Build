@@ -20,6 +20,7 @@ import SwiftUI
 /// Build 37：右上「刷新」左边加「编辑」——进入批量删除模式：卡片左侧出
 /// 勾选圈、点卡只勾选（不展开不侧滑），底部操作条显示已选个数 + 删除，
 /// 确认后按 build 逐个调后端 version_delete（只删记录，不删 IPA 文件）。
+/// Build 46：版本卡改标准表格行（总览同款），拉伸容器撤掉。
 struct VersionsView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -143,8 +144,8 @@ struct VersionsView: View {
 /// 三行文案输入框、保存、发布信息，全部装在同一个单元格里（一张卡、
 /// 一面背景——Build 42 合并：此前输入框是同 Section 的独立行、发布
 /// 信息更是展开后另起的一张 Section 卡，正是用户说的「展开后多出
-/// 一张卡」）；展开走 StretchReveal（与账号卡同款动效：临界阻尼、
-/// 内容最终尺寸排版、被卡片自身生长的边界裁剪揭示）；
+/// 一张卡」）；Build 46 改标准表格行（总览同款）：标题行是一行，
+/// 点开后输入框、保存、反馈、发布于各占标准的一行；
 /// 状态不在卡里改——对着卡左滑出侧滑按钮改状态（见文件头注释）
 private struct VersionEditCard: View {
     @EnvironmentObject var api: AccountAPI
@@ -188,92 +189,37 @@ private struct VersionEditCard: View {
         title != entry.title || l2 != entry.l2 || l3 != entry.l3
     }
 
+    // Build 46：版本卡改标准表格行（总览同款）——标题行是一行（版本 ·
+    // Build + 状态胶囊 + 箭头），点开后三行输入框、保存、反馈、发布于
+    // 各占标准的一行；编辑模式时点标题行只勾选；侧滑挂在标题行上
     var body: some View {
-        Section {
-            // Build 42 合并：整张卡只有一个单元格——标题行在上，展开区
-            // （三行输入框 + 保存 + 发布信息）在下，同处这一格、共用
-            // Section 的同一面卡背景。此前输入框是同 Section 里另起的
-            // 三行 + 保存行，发布信息更是展开后在下面再冒出来的一张
-            // 独立 Section 卡（下方原「发布信息独立卡」Section），看着
-            // 就像多出一张卡（用户原话）。标题行：版本号 · Build +
-            // 右侧状态胶囊（只显示，不加箭头）。点标题行收起/展开（编
-            // 辑模式时只勾选）；改状态的侧滑挂在整个单元格上（弹更新 /
-            // 禁用 / 恢复正常，按当前状态只显示适用的；点了直接
-            // version_set 只带状态，文案不动——和 Build 32 以前版本行
-            // 的侧滑同一套）
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 10) {
-                    if editing {
-                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .appFont(.title3)
-                            .foregroundColor(selected ? .accentColor : .secondary)
-                    }
-                    Text("\(entry.version) · Build \(entry.build)")
-                        .appFont(.headline)
-                    Spacer(minLength: 6)
-                    versionChip
+        let insets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+        return Section {
+            HStack(alignment: .center, spacing: 10) {
+                if editing {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .appFont(.title3)
+                        .foregroundColor(selected ? .accentColor : .secondary)
                 }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if editing {
-                        onToggleSelect()
-                    } else {
-                        // 动效归 StretchReveal（临界阻尼拉伸，与账号卡
-                        // 同款），这里只翻状态（原 withAnimation 0.2 撤掉）
-                        expanded.toggle()
-                    }
-                }
-                StretchReveal(expanded: expanded && !editing) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Divider()
-                            .padding(.vertical, 4)
-                        editorField("提示", placeholder: "弹窗标题", text: $title)
-                        editorField("标题", placeholder: "第二行文案", text: $l2)
-                        editorField("原因", placeholder: "第三行文案", text: $l3)
-                        // 保存按钮 = 账号页封禁按钮同款（Build 36）：整宽
-                        // 胶囊按钮（.borderedProminent）；有未保存改动时
-                        // 亮起，没改动 / 已保存时置灰不可点（disabled 的
-                        // 系统灰，同封禁按钮口径）。已保存 / 报错反馈在
-                        // 按钮下方一行（行为沿用之前）
-                        VStack(spacing: 6) {
-                            Button {
-                                Task { await save() }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text("保存")
-                                    if saving { ProgressView() }
-                                }
-                                .appFont(.body, weight: .semibold)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 2)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(saving || !dirty)
-                            if saved {
-                                Text("已保存")
-                                    .appFont(.caption)
-                                    .foregroundColor(.green)
-                            } else if let err {
-                                Text(err)
-                                    .appFont(.caption)
-                                    .foregroundColor(.red)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .padding(.top, 8)
-                        // 发布信息（Build 42 并回本卡）：展开区底部一行，
-                        // 和输入框同在一张卡里，不再是独立卡；只显示
-                        // 「发布于」，更新说明不在本页显示（Build 41 口径）
-                        if let publishedLine {
-                            Text(publishedLine)
-                                .appFont(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.top, 8)
-                        }
-                    }
+                Text("\(entry.version) · Build \(entry.build)")
+                    .appFont(.headline)
+                Spacer(minLength: 6)
+                versionChip
+                if !editing {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .appFont(.caption, weight: .semibold)
+                        .foregroundColor(.secondary)
                 }
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if editing {
+                    onToggleSelect()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                }
+            }
+            .listRowInsets(insets)
             .swipeActions(edge: .trailing) {
                 if !editing {
                     if entry.state != "soft" {
@@ -288,6 +234,50 @@ private struct VersionEditCard: View {
                         Button("恢复正常") { Task { await setState("normal") } }
                             .tint(.gray)
                     }
+                }
+            }
+            if expanded && !editing {
+                editorField("提示", placeholder: "弹窗标题", text: $title)
+                    .listRowInsets(insets)
+                editorField("标题", placeholder: "第二行文案", text: $l2)
+                    .listRowInsets(insets)
+                editorField("原因", placeholder: "第三行文案", text: $l3)
+                    .listRowInsets(insets)
+                // 保存按钮 = 账号页封禁按钮同款（Build 36）：整宽胶囊按钮
+                // （.borderedProminent）；有未保存改动时亮起，没改动 /
+                // 已保存时置灰不可点（disabled 的系统灰，同封禁按钮口径）
+                Button {
+                    Task { await save() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("保存")
+                        if saving { ProgressView() }
+                    }
+                    .appFont(.body, weight: .semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(saving || !dirty)
+                .listRowInsets(insets)
+                if saved {
+                    Text("已保存")
+                        .appFont(.caption)
+                        .foregroundColor(.green)
+                        .listRowInsets(insets)
+                } else if let err {
+                    Text(err)
+                        .appFont(.caption)
+                        .foregroundColor(.red)
+                        .lineLimit(1)
+                        .listRowInsets(insets)
+                }
+                // 发布信息：只显示「发布于」，更新说明不在本页显示（Build 41 口径）
+                if let publishedLine {
+                    Text(publishedLine)
+                        .appFont(.caption)
+                        .foregroundColor(.secondary)
+                        .listRowInsets(insets)
                 }
             }
         }
@@ -308,8 +298,7 @@ private struct VersionEditCard: View {
             .cornerRadius(8)
     }
 
-    /// 展开区里的输入行（Build 42）：不再是独立的列表行，而是卡内
-    /// 一行——上下 4pt 内边距沿用原来行口径（Build 33 压缩口径）；
+    /// 输入行（Build 46 起是标准表格行里的独立一行，行高由行内边距承担）
     /// 标签字号原本就是 .body（17 档，与卡面同档），Build 42 不动
     private func editorField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
         HStack(spacing: 10) {
@@ -319,7 +308,6 @@ private struct VersionEditCard: View {
             TextField(placeholder, text: text)
                 .autocorrectionDisabled()
         }
-        .padding(.vertical, 4)
     }
 
     /// 侧滑改状态：version_set 只带状态（不带文案），改完用回传列表刷新整页

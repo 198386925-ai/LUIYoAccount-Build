@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// Build 42：两处说明展开区与各自的卡面同处一个单元格（一张卡）；
 /// 说明正文从 footnote 升到 headline 档（用户：展开的字再大一些），
 /// 卡面行（最新版本 / 版本 · Build / 发布于）字号一律不变
+/// Build 46：两处说明展开和历史版本行改标准表格行（总览同款），拉伸容器撤掉
 struct UpdateView: View {
     @EnvironmentObject var api: AccountAPI
     @EnvironmentObject var fontStore: FontStore
@@ -48,23 +49,22 @@ struct UpdateView: View {
                     LabeledContent("安装包", value: l.assetName)
                     LabeledContent("大小", value: sizeText(l.assetSize))
                     if let b = l.body, !b.isEmpty {
-                        // Build 40：原来「本次更新：…」整段直出，改成可展开的
-                        // 「更新说明」行（照定稿效果图）：收起只显示标题 + 箭头，
-                        // 点开拉伸看全文（StretchReveal，与账号卡同款动效）
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(alignment: .center, spacing: 10) {
-                                Text("更新说明")
-                                Spacer(minLength: 6)
-                                Image(systemName: notesExpanded ? "chevron.down" : "chevron.right")
-                                    .appFont(.caption, weight: .semibold)
-                                    .foregroundColor(.secondary)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { notesExpanded.toggle() }
-                            StretchReveal(expanded: notesExpanded) {
-                                // Build 42：说明正文升 headline 档（原 footnote）
-                                Text(b).appFont(.headline, weight: .regular).foregroundColor(.secondary)
-                            }
+                        // Build 46：更新说明改标准表格行（总览同款）——标题行
+                        // 是一行，点开后全文占标准的一行
+                        HStack(alignment: .center, spacing: 10) {
+                            Text("更新说明")
+                            Spacer(minLength: 6)
+                            Image(systemName: notesExpanded ? "chevron.up" : "chevron.down")
+                                .appFont(.caption, weight: .semibold)
+                                .foregroundColor(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) { notesExpanded.toggle() }
+                        }
+                        if notesExpanded {
+                            // Build 42：说明正文升 headline 档（原 footnote）
+                            Text(b).appFont(.headline, weight: .regular).foregroundColor(.secondary)
                         }
                     }
                 } else {
@@ -131,37 +131,43 @@ struct UpdateView: View {
                     ForEach(history) { v in
                         let isOpen = expandedHistory.contains(v.build)
                         let hasNotes = !v.notes.isEmpty
-                        VStack(alignment: .leading, spacing: 2) {
+                        let insets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+                        // Build 46：历史版本行改标准表格行（总览同款）——标题行
+                        // 是一行，发布于和说明点开后各占标准的一行；收起时仍
+                        // 显示版本号 · Build + 发布于（Build 41 口径不变）
+                        Group {
                             HStack(alignment: .center, spacing: 10) {
                                 Text("\(v.version) · Build \(v.build)")
                                     .appFont(.headline)
                                 Spacer(minLength: 6)
                                 if hasNotes {
-                                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                                    Image(systemName: isOpen ? "chevron.up" : "chevron.down")
                                         .appFont(.caption, weight: .semibold)
                                         .foregroundColor(.secondary)
                                 }
                             }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if hasNotes {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        if isOpen { expandedHistory.remove(v.build) } else { expandedHistory.insert(v.build) }
+                                    }
+                                }
+                            }
+                            .listRowInsets(insets)
                             if v.publishedAt > 0 {
                                 Text("发布于 " + v.publishedText)
                                     .appFont(.caption2)
                                     .foregroundColor(.secondary)
+                                    .listRowInsets(insets)
                             }
-                            if hasNotes {
-                                StretchReveal(expanded: isOpen) {
-                                    Text(historyNotesText(v.notes))
-                                        .appFont(.headline, weight: .regular)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if hasNotes {
-                                if isOpen { expandedHistory.remove(v.build) } else { expandedHistory.insert(v.build) }
+                            if hasNotes && isOpen {
+                                Text(historyNotesText(v.notes))
+                                    .appFont(.headline, weight: .regular)
+                                    .foregroundColor(.secondary)
+                                    .listRowInsets(insets)
                             }
                         }
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
                 } header: {
                     AppSectionHeader("历史版本")

@@ -1,53 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// 拉伸展开容器（Build 40；Build 41 按用户录的主 App 设置页视频重做
-/// 动效口径）：内容按自然高度先量出来、从一开始就按最终尺寸排版、
-/// 顶对齐钉住，容器高度在 0 ↔ 自然高度之间动画，内容被容器自己的
-/// 边界逐步裁剪揭示——整张卡是一面在长高，不是「内容淡入」也不是
-/// 「下面另长出一块」。Build 40 的两处偏差在 41 撤掉：① 详情单独的
-/// opacity 淡入淡出（视频里没有淡入，只有裁剪揭示）；② spring 欠
-/// 阻尼（dampingFraction 0.86）会过冲回弹，视频是平滑无回弹——改
-/// 临界阻尼（response 0.32 / dampingFraction 1.0，零过冲）+ 约
-/// 0.3s 的节奏，与主 App 卡片一致。高度动画在同一事务里驱动所在
-/// 行的行高，下面的行跟着一起滑。账号卡 / 封禁行 / 邮件卡 / 更新
-/// 说明 / 历史版本共用同一套动效。量测靠背景 GeometryReader 读内容
-/// 固有高度（内容垂直方向 fixedSize 不吃父级压缩）；展开状态只是
-/// 本地 UI 状态，切换不触发任何回源
-struct StretchReveal<Content: View>: View {
-    let expanded: Bool
-    let content: Content
-    @State private var contentHeight: CGFloat = 0
-
-    init(expanded: Bool, @ViewBuilder content: () -> Content) {
-        self.expanded = expanded
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .fixedSize(horizontal: false, vertical: true)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: StretchHeightKey.self, value: geo.size.height)
-                }
-            )
-            .onPreferenceChange(StretchHeightKey.self) { contentHeight = $0 }
-            .frame(height: expanded ? contentHeight : 0, alignment: .top)
-            .clipped()
-            // Build 41：去掉 Build 40 的 .opacity 淡入淡出（揭示只靠裁剪），
-            // 弹簧改临界阻尼防过冲回弹（口径见本结构体头部注释）
-            .animation(.spring(response: 0.32, dampingFraction: 1.0), value: expanded)
-            .accessibilityHidden(!expanded)
-    }
-}
-
-private struct StretchHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
+/// Build 46：全部可折叠改标准表格行（总览同款）——标题行是一行，点开后每条明细就是标准的一行，收放走设置页服务器卡同款 if + withAnimation；拉伸容器已撤掉。
 
 /// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
 /// + 行侧滑 封禁(带理由)·解封 / 取消授权·添加授权（Build 44）/ 允许越狱开关 / 取消IP标红 / 复制账号
@@ -57,6 +11,8 @@ private struct StretchHeightKey: PreferenceKey {
 /// Build 35：账号卡可收起——收起只显示邮箱 + 右侧标识（免费/SVIP/已封禁，
 /// 不加箭头），点卡展开才显示注册/最后登录/UDID/越狱允许等详情行
 /// Build 40：展开/收起改成拉伸动效（StretchReveal），内容不变
+/// Build 46：全部可折叠改标准表格行（总览同款）——标题行是一行，点开后
+/// 每条明细就是标准的一行，拉伸容器撤掉；账号卡与封禁行全部统一。
 /// Build 42：用户反馈展开后像「多出一张卡」——本页核查后确认账号行
 /// 本就是单单元格（邮箱与详情同在一行、共用卡面），观感靠两点收紧：
 /// 展开区顶部加卡内细线（定稿预览同款）、详情正文字号升到 headline
@@ -198,77 +154,45 @@ struct AccountsView: View {
 
     // MARK: - 账号行
 
+    // Build 46：账号行改标准表格行（总览同款）——标题行是一行（邮箱 +
+    // 标识 + 箭头，整行可点），点开后每条明细就是标准的一行；收起 =
+    // 邮箱 + 右侧标识；收放走设置页服务器卡同款 if + withAnimation
     private func accountRow(_ u: AccountUser) -> some View {
         let expanded = expandedAccounts.contains(u.email)
-        return HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+        let insets = EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26)
+        return Group {
+            HStack(alignment: .center, spacing: 10) {
                 Text(u.email)
                     .appFont(.headline)
                     .lineLimit(1)
-                // 详情只在展开时显示（Build 35）：收起 = 邮箱 + 右侧标识，不加箭头
-                // Build 40：显隐改走 StretchReveal 拉伸动效，内容一字未变
-                // Build 42：详情和邮箱同处这一行单元格（一张卡面，无独立
-                // 背景块）；展开区顶部加一条卡内细线（照定稿预览），详情
-                // 正文从 caption/caption2 升到与邮箱同档的 headline 档
-                // （用户：展开的字再大一些）——只升字号档，颜色/内容不变
-                StretchReveal(expanded: expanded) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Divider()
-                            .padding(.vertical, 4)
-                        if u.isBanned && !u.banReason.isEmpty {
-                            Text("封禁理由：" + u.banReason)
-                                .appFont(.headline, weight: .regular)
-                                .foregroundColor(.red)
-                        }
-                        Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
-                            .appFont(.headline, weight: .regular)
-                            .foregroundColor(.secondary)
-                        if !u.udid.isEmpty {
-                            Text("UDID " + u.udid)
-                                .appFont(.headline, weight: .regular, design: .monospaced)
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        HStack {
-                            // 今日验证（Build 38）：后端 captcha_today 在才拼
-                            // 「· 今日验证 X 次」；老后端没这字段整段不显示
-                            Text("越狱允许：" + (u.allowJailbreak ? "是" : "否")
-                                 + (u.captchaToday.map { " · 今日验证 \($0) 次" } ?? ""))
-                            Spacer()
-                            if u.svip {
-                                Text("SVIP 到期 " + u.svipExpiresText)
-                            }
-                        }
-                        .appFont(.headline, weight: .regular)
-                        .foregroundColor(.secondary)
+                Spacer(minLength: 6)
+                // 状态标识成组放在右侧；Build 38：整列左边缘对齐——免费/
+                // SVIP 和下面 IP异常 的左边缘在同一条竖线上
+                VStack(alignment: .leading, spacing: 1) {
+                    if u.isBanned {
+                        tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
+                    } else if u.svip {
+                        tag("SVIP", bg: Color.green.opacity(0.15), fg: .green)
+                    } else {
+                        tag("免费", bg: Color.gray.opacity(0.15), fg: .secondary)
+                    }
+                    if u.ipFlagged {
+                        tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
                     }
                 }
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .appFont(.caption, weight: .semibold)
+                    .foregroundColor(.secondary)
             }
-            Spacer(minLength: 6)
-            // 状态标识成组放在右侧、对整行上下居中（不再贴在邮箱那一行）；
-            // Build 38：整列左边缘对齐——免费/SVIP 和下面 IP异常 的左边缘
-            // 在同一条竖线上（原来各自右对齐，左边缘参差不齐）
-            VStack(alignment: .leading, spacing: 1) {
-                if u.isBanned {
-                    tag("已封禁", bg: Color.red.opacity(0.15), fg: .red)
-                } else if u.svip {
-                    tag("SVIP", bg: Color.green.opacity(0.15), fg: .green)
-                } else {
-                    tag("免费", bg: Color.gray.opacity(0.15), fg: .secondary)
-                }
-                if u.ipFlagged {
-                    tag("IP异常", bg: Color.orange.opacity(0.18), fg: .orange)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // 点行收起/展开详情（侧滑不受影响，各走各的手势）
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if expanded { expandedAccounts.remove(u.email) } else { expandedAccounts.insert(u.email) }
                 }
             }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            // 点卡收起/展开详情（侧滑不受影响，各走各的手势）
-            // Build 40：动效归 StretchReveal 的 spring 拉伸，这里只翻状态
-            if expanded { expandedAccounts.remove(u.email) } else { expandedAccounts.insert(u.email) }
-        }
-        .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
-        .swipeActions(edge: .trailing) {
+            .listRowInsets(insets)
+            .swipeActions(edge: .trailing) {
             if u.isBanned {
                 Button("解封") { run { try await api.accountBan(email: u.email, ban: false) } }
                     .tint(.green)
@@ -301,6 +225,40 @@ struct AccountsView: View {
                 notice = "已复制账号"
             }
             .tint(.indigo)
+            }
+            // 展开后每条明细就是标准的一行（内容一字未变，只换呈现）
+            if expanded {
+                if u.isBanned && !u.banReason.isEmpty {
+                    Text("封禁理由：" + u.banReason)
+                        .appFont(.headline, weight: .regular)
+                        .foregroundColor(.red)
+                        .listRowInsets(insets)
+                }
+                Text("注册 \(u.createdText) · 最后登录 \(u.lastLoginText)")
+                    .appFont(.headline, weight: .regular)
+                    .foregroundColor(.secondary)
+                    .listRowInsets(insets)
+                if !u.udid.isEmpty {
+                    Text("UDID " + u.udid)
+                        .appFont(.headline, weight: .regular, design: .monospaced)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                        .listRowInsets(insets)
+                }
+                // 今日验证（Build 38）：后端 captcha_today 在才拼
+                // 「· 今日验证 X 次」；老后端没这字段整段不显示
+                Text("越狱允许：" + (u.allowJailbreak ? "是" : "否")
+                     + (u.captchaToday.map { " · 今日验证 \($0) 次" } ?? ""))
+                    .appFont(.headline, weight: .regular)
+                    .foregroundColor(.secondary)
+                    .listRowInsets(insets)
+                if u.svip {
+                    Text("SVIP 到期 " + u.svipExpiresText)
+                        .appFont(.headline, weight: .regular)
+                        .foregroundColor(.secondary)
+                        .listRowInsets(insets)
+                }
+            }
         }
     }
 
@@ -475,8 +433,8 @@ struct BansView: View {
 
 // MARK: - 已封禁行（Build 40 可展开编辑）
 
-/// 已封禁列表的行：收起只显示账号邮箱 + 授权标识 + 右侧箭头；点行拉伸展开
-/// （StretchReveal，与账号卡同款动效），展开后是标题 / 副标题 /
+/// 已封禁列表的行：收起只显示账号邮箱 + 授权标识 + 右侧箭头；点行展开
+/// （Build 46 标准表格行，总览同款），展开后是标题 / 副标题 /
 /// 原因三个输入框 + 保存——保存走账号页封禁表单同一条 admin_ban
 /// 写接口（api.accountBan 带 title/subtitle），写完 API 就地改缓存
 /// 行，主 App 下次状态检查就拿到新文案。保存按钮与反馈行照版本
@@ -513,8 +471,12 @@ private struct BannedAccountRow: View {
         title != user.banTitle || subtitle != user.banSubtitle || reason != user.banReason
     }
 
+    // Build 46：封禁行改标准表格行（总览同款）——标题行是一行（邮箱 +
+    // 标识 + 箭头），点开后标题 / 副标题 / 原因各占标准的一行，保存
+    // 和反馈也各是一行；收放走设置页服务器卡同款 if + withAnimation
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let insets = EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26)
+        return Group {
             HStack(alignment: .center, spacing: 10) {
                 Text(user.email)
                     .appFont(.headline)
@@ -523,56 +485,59 @@ private struct BannedAccountRow: View {
                 // Build 41：收起行右侧加授权标识（与账号行同数据源、同
                 // 样式的胶囊：SVIP 绿 / 免费灰），在箭头左边
                 statusTag
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
                     .appFont(.caption, weight: .semibold)
                     .foregroundColor(.secondary)
             }
             .contentShape(Rectangle())
-            .onTapGesture { expanded.toggle() }
-            StretchReveal(expanded: expanded) {
-                VStack(spacing: 0) {
-                    editField("标题", placeholder: "如：账号已被封禁", text: $title)
-                    editField("副标题", placeholder: "如：你的账号已被停用", text: $subtitle)
-                    editField("原因", placeholder: "如：多次违规使用", text: $reason)
-                    VStack(spacing: 6) {
-                        Button {
-                            save()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("保存")
-                                if saving { ProgressView() }
-                            }
-                            .appFont(.body, weight: .semibold)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 2)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .disabled(saving || !dirty)
-                        if saved {
-                            Text("已保存")
-                                .appFont(.caption)
-                                .foregroundColor(.green)
-                        } else if let saveError {
-                            Text(saveError)
-                                .appFont(.caption)
-                                .foregroundColor(.red)
-                                .lineLimit(1)
-                        }
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+            }
+            .listRowInsets(insets)
+            .swipeActions(edge: .trailing) {
+                Button("解封") { run { try await api.accountBan(email: user.email, ban: false) } }
+                    .tint(.green)
+                Button("复制账号") {
+                    UIPasteboard.general.string = user.email
+                    notify("已复制账号")
+                }
+                .tint(.indigo)
+            }
+            if expanded {
+                editField("标题", placeholder: "如：账号已被封禁", text: $title)
+                    .listRowInsets(insets)
+                editField("副标题", placeholder: "如：你的账号已被停用", text: $subtitle)
+                    .listRowInsets(insets)
+                editField("原因", placeholder: "如：多次违规使用", text: $reason)
+                    .listRowInsets(insets)
+                Button {
+                    save()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("保存")
+                        if saving { ProgressView() }
                     }
-                    .padding(.top, 10)
+                    .appFont(.body, weight: .semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(saving || !dirty)
+                .listRowInsets(insets)
+                if saved {
+                    Text("已保存")
+                        .appFont(.caption)
+                        .foregroundColor(.green)
+                        .listRowInsets(insets)
+                } else if let saveError {
+                    Text(saveError)
+                        .appFont(.caption)
+                        .foregroundColor(.red)
+                        .lineLimit(1)
+                        .listRowInsets(insets)
                 }
             }
-        }
-        .listRowInsets(EdgeInsets(top: 2, leading: 26, bottom: 2, trailing: 26))
-        .swipeActions(edge: .trailing) {
-            Button("解封") { run { try await api.accountBan(email: user.email, ban: false) } }
-                .tint(.green)
-            Button("复制账号") {
-                UIPasteboard.general.string = user.email
-                notify("已复制账号")
-            }
-            .tint(.indigo)
         }
         // 改了任何一格，「已保存」标记立刻撤下（按钮随 dirty 重新亮起）
         .onChange(of: title) { _ in saved = false }
@@ -601,7 +566,6 @@ private struct BannedAccountRow: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         }
-        .padding(.vertical, 7)
     }
 
     private func save() {
