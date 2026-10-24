@@ -22,6 +22,9 @@ struct CardsView: View {
     @State private var error: String?
     @State private var notice: String?
 
+    /// 卡行收起/展开（Build 49）：按卡号记展开状态，默认全收起（账号页同款）
+    @State private var expandedCards: Set<String> = []
+
     var body: some View {
         NavigationView {
             Form {
@@ -211,10 +214,11 @@ struct CardsView: View {
 
     private var days: Int { Int(daysValue) ?? 30 }
 
-    // Build 49：已使用卡行改标准表格行（账号页同款）——卡号是一行，
-    // 备注、账号、时长、生成于、绑定时间每条各占标准的一行，不再挤
-    // 在一张卡里；明细一直都显示着，不收起；侧滑挂在卡号那一行上
+    // Build 49：已使用卡行改标准表格行（账号页同款）——卡号是一行
+    // （带箭头，整行可点），点开后备注、账号、时长、生成于、绑定时间
+    // 每条各占标准的一行；默认全收起；侧滑挂在卡号那一行上
     private func usedRow(_ card: CardItem) -> some View {
+        let expanded = expandedCards.contains(card.code)
         let insets = EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
         return Group {
             HStack {
@@ -222,6 +226,15 @@ struct CardsView: View {
                     .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .appFont(.caption, weight: .semibold)
+                    .foregroundColor(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if expanded { expandedCards.remove(card.code) } else { expandedCards.insert(card.code) }
+                }
             }
             .listRowInsets(insets)
             .swipeActions(edge: .trailing) {
@@ -237,36 +250,40 @@ struct CardsView: View {
                     }
                 }
             }
-            if !card.remark.isEmpty {
-                Text("备注：" + card.remark)
-                    .appFont(.caption, weight: .medium)
+            if expanded {
+                if !card.remark.isEmpty {
+                    Text("备注：" + card.remark)
+                        .appFont(.caption, weight: .medium)
+                        .listRowInsets(insets)
+                }
+                Text("账号：" + card.boundEmail)
+                    .appFont(.caption)
+                    .foregroundColor(.green)
+                    .lineLimit(1)
                     .listRowInsets(insets)
-            }
-            Text("账号：" + card.boundEmail)
-                .appFont(.caption)
-                .foregroundColor(.green)
-                .lineLimit(1)
-                .listRowInsets(insets)
-            Text("时长 " + card.daysText)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-                .listRowInsets(insets)
-            Text("生成于 " + card.createdText)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-                .listRowInsets(insets)
-            if card.boundAt > 0 {
-                Text("绑定时间：" + card.boundAtText)
+                Text("时长 " + card.daysText)
                     .appFont(.caption)
                     .foregroundColor(.secondary)
                     .listRowInsets(insets)
+                Text("生成于 " + card.createdText)
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
+                    .listRowInsets(insets)
+                if card.boundAt > 0 {
+                    Text("绑定时间：" + card.boundAtText)
+                        .appFont(.caption)
+                        .foregroundColor(.secondary)
+                        .listRowInsets(insets)
+                }
             }
         }
     }
 
-    // Build 49：未使用卡行同样改标准表格行——卡号是一行，备注、时长、
-    // 生成于每条各占标准的一行；侧滑挂在卡号那一行上
+    // Build 49：未使用卡行同样改标准表格行——卡号是一行（带箭头，
+    // 整行可点），点开后备注、时长、生成于每条各占标准的一行；默认全
+    // 收起；侧滑挂在卡号那一行上
     private func unusedRow(_ card: CardItem) -> some View {
+        let expanded = expandedCards.contains(card.code)
         let insets = EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
         return Group {
             HStack {
@@ -274,6 +291,15 @@ struct CardsView: View {
                     .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .appFont(.caption, weight: .semibold)
+                    .foregroundColor(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if expanded { expandedCards.remove(card.code) } else { expandedCards.insert(card.code) }
+                }
             }
             .listRowInsets(insets)
             .swipeActions(edge: .trailing) {
@@ -285,19 +311,21 @@ struct CardsView: View {
                     notice = "已复制卡密"
                 }
             }
-            if !card.remark.isEmpty {
-                Text("备注：" + card.remark)
-                    .appFont(.caption, weight: .medium)
+            if expanded {
+                if !card.remark.isEmpty {
+                    Text("备注：" + card.remark)
+                        .appFont(.caption, weight: .medium)
+                        .listRowInsets(insets)
+                }
+                Text(card.daysText)
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
+                    .listRowInsets(insets)
+                Text("生成于 " + card.createdText)
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
                     .listRowInsets(insets)
             }
-            Text(card.daysText)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-                .listRowInsets(insets)
-            Text("生成于 " + card.createdText)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-                .listRowInsets(insets)
         }
     }
 
