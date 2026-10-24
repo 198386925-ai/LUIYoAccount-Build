@@ -219,22 +219,32 @@ struct CardsView: View {
                 Spacer()
                 statusBadge(card)
             }
+            // Build 48：备注和账号合并显示一行（备注空时只显示账号）
             if !card.remark.isEmpty {
-                Text("备注：" + card.remark)
-                    .appFont(.caption, weight: .medium)
+                HStack(spacing: 6) {
+                    Text("备注：" + card.remark)
+                        .appFont(.caption, weight: .medium)
+                        .lineLimit(1)
+                    Text("·")
+                        .appFont(.caption)
+                        .foregroundColor(.secondary)
+                    Text("账号：" + card.boundEmail)
+                        .appFont(.caption)
+                        .foregroundColor(.green)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+            } else {
+                Text("账号：" + card.boundEmail)
+                    .appFont(.caption)
+                    .foregroundColor(.green)
+                    .lineLimit(1)
             }
-            Text("账号：" + card.boundEmail)
-                .appFont(.caption)
-                .foregroundColor(.green)
-                .lineLimit(1)
-            Text("时长 " + card.daysText + " · 生成于 " + card.createdText)
+            // Build 48：绑定时间和生成时间合并显示一行（并到时长那一行）
+            Text("时长 " + card.daysText + " · 生成于 " + card.createdText
+                 + (card.boundAt > 0 ? " · 绑定时间：" + card.boundAtText : ""))
                 .appFont(.caption)
                 .foregroundColor(.secondary)
-            if card.boundAt > 0 {
-                Text("绑定时间：" + card.boundAtText)
-                    .appFont(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
         .padding(.vertical, 1)
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
