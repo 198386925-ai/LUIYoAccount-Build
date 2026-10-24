@@ -212,14 +212,43 @@ struct CardsView: View {
     private var days: Int { Int(daysValue) ?? 30 }
 
     private func usedRow(_ card: CardItem) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        // Build 48 修复：合并行字符串先算成局部量、备注账号行拆成小视图，
+        // 不让类型检查器在整个 VStack 里一次性推断（CI 曾报 unable to type-check）
+        let timeLine = "时长 " + card.daysText + " · 生成于 " + card.createdText
+            + (card.boundAt > 0 ? " · 绑定时间：" + card.boundAtText : "")
+        return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(card.code)
                     .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
             }
-            // Build 48：备注和账号合并显示一行（备注空时只显示账号）
+            remarkAccountLine(card)
+            // Build 48：绑定时间和生成时间合并显示一行（并到时长那一行）
+            Text(timeLine)
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 1)
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .swipeActions(edge: .trailing) {
+            Button("删除", role: .destructive) { deleteTarget = card }
+            Button("复制卡密") {
+                UIPasteboard.general.string = card.code
+                notice = "已复制卡密"
+            }
+            if !card.boundEmail.isEmpty {
+                Button("复制账号") {
+                    UIPasteboard.general.string = card.boundEmail
+                    notice = "已复制账号"
+                }
+            }
+        }
+    }
+
+    /// Build 48：备注和账号合并显示一行（备注空时只显示账号）
+    private func remarkAccountLine(_ card: CardItem) -> some View {
+        Group {
             if !card.remark.isEmpty {
                 HStack(spacing: 6) {
                     Text("备注：" + card.remark)
@@ -239,26 +268,6 @@ struct CardsView: View {
                     .appFont(.caption)
                     .foregroundColor(.green)
                     .lineLimit(1)
-            }
-            // Build 48：绑定时间和生成时间合并显示一行（并到时长那一行）
-            Text("时长 " + card.daysText + " · 生成于 " + card.createdText
-                 + (card.boundAt > 0 ? " · 绑定时间：" + card.boundAtText : ""))
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 1)
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-        .swipeActions(edge: .trailing) {
-            Button("删除", role: .destructive) { deleteTarget = card }
-            Button("复制卡密") {
-                UIPasteboard.general.string = card.code
-                notice = "已复制卡密"
-            }
-            if !card.boundEmail.isEmpty {
-                Button("复制账号") {
-                    UIPasteboard.general.string = card.boundEmail
-                    notice = "已复制账号"
-                }
             }
         }
     }
