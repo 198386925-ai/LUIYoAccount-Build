@@ -227,16 +227,6 @@ struct CardsView: View {
                 .appFont(.caption)
                 .foregroundColor(.green)
                 .lineLimit(1)
-            if !card.boundUdid.isEmpty {
-                Text("UDID：" + card.boundUdid)
-                    .appFont(.caption2, design: .monospaced)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            } else {
-                Text("UDID：未获取")
-                    .appFont(.caption)
-                    .foregroundColor(.secondary)
-            }
             Text("时长 " + card.daysText + " · 生成于 " + card.createdText)
                 .appFont(.caption)
                 .foregroundColor(.secondary)
@@ -258,12 +248,6 @@ struct CardsView: View {
                 Button("复制账号") {
                     UIPasteboard.general.string = card.boundEmail
                     notice = "已复制账号"
-                }
-            }
-            if !card.boundUdid.isEmpty {
-                Button("复制UDID") {
-                    UIPasteboard.general.string = card.boundUdid
-                    notice = "已复制UDID"
                 }
             }
         }
