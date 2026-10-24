@@ -211,93 +211,93 @@ struct CardsView: View {
 
     private var days: Int { Int(daysValue) ?? 30 }
 
+    // Build 49：已使用卡行改标准表格行（账号页同款）——卡号是一行，
+    // 备注、账号、时长、生成于、绑定时间每条各占标准的一行，不再挤
+    // 在一张卡里；明细一直都显示着，不收起；侧滑挂在卡号那一行上
     private func usedRow(_ card: CardItem) -> some View {
-        // Build 48 修复：合并行字符串先算成局部量、备注账号行拆成小视图，
-        // 不让类型检查器在整个 VStack 里一次性推断（CI 曾报 unable to type-check）
-        let timeLine = "时长 " + card.daysText + " · 生成于 " + card.createdText
-            + (card.boundAt > 0 ? " · 绑定时间：" + card.boundAtText : "")
-        return VStack(alignment: .leading, spacing: 5) {
+        let insets = EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
+        return Group {
             HStack {
                 Text(card.code)
                     .appFont(.footnote, design: .monospaced)
                 Spacer()
                 statusBadge(card)
             }
-            remarkAccountLine(card)
-            // Build 48：绑定时间和生成时间合并显示一行（并到时长那一行）
-            Text(timeLine)
-                .appFont(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 1)
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-        .swipeActions(edge: .trailing) {
-            Button("删除", role: .destructive) { deleteTarget = card }
-            Button("复制卡密") {
-                UIPasteboard.general.string = card.code
-                notice = "已复制卡密"
-            }
-            if !card.boundEmail.isEmpty {
-                Button("复制账号") {
-                    UIPasteboard.general.string = card.boundEmail
-                    notice = "已复制账号"
+            .listRowInsets(insets)
+            .swipeActions(edge: .trailing) {
+                Button("删除", role: .destructive) { deleteTarget = card }
+                Button("复制卡密") {
+                    UIPasteboard.general.string = card.code
+                    notice = "已复制卡密"
                 }
-            }
-        }
-    }
-
-    /// Build 48：备注和账号合并显示一行（备注空时只显示账号）
-    private func remarkAccountLine(_ card: CardItem) -> some View {
-        Group {
-            if !card.remark.isEmpty {
-                HStack(spacing: 6) {
-                    Text("备注：" + card.remark)
-                        .appFont(.caption, weight: .medium)
-                        .lineLimit(1)
-                    Text("·")
-                        .appFont(.caption)
-                        .foregroundColor(.secondary)
-                    Text("账号：" + card.boundEmail)
-                        .appFont(.caption)
-                        .foregroundColor(.green)
-                        .lineLimit(1)
-                        .layoutPriority(1)
+                if !card.boundEmail.isEmpty {
+                    Button("复制账号") {
+                        UIPasteboard.general.string = card.boundEmail
+                        notice = "已复制账号"
+                    }
                 }
-            } else {
-                Text("账号：" + card.boundEmail)
-                    .appFont(.caption)
-                    .foregroundColor(.green)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    private func unusedRow(_ card: CardItem) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(card.code)
-                    .appFont(.footnote, design: .monospaced)
-                Spacer()
-                statusBadge(card)
             }
             if !card.remark.isEmpty {
                 Text("备注：" + card.remark)
                     .appFont(.caption, weight: .medium)
+                    .listRowInsets(insets)
             }
-            Text(detailLine(card))
+            Text("账号：" + card.boundEmail)
+                .appFont(.caption)
+                .foregroundColor(.green)
+                .lineLimit(1)
+                .listRowInsets(insets)
+            Text("时长 " + card.daysText)
                 .appFont(.caption)
                 .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 1)
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-        .swipeActions(edge: .trailing) {
-            Button("删除", role: .destructive) { deleteTarget = card }
-            Button(card.disabled ? "启用" : "作废") { Task { await toggle(card) } }
-                .tint(card.disabled ? .green : .orange)
-            Button("复制") {
-                UIPasteboard.general.string = card.code
-                notice = "已复制卡密"
+                .listRowInsets(insets)
+            Text("生成于 " + card.createdText)
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+                .listRowInsets(insets)
+            if card.boundAt > 0 {
+                Text("绑定时间：" + card.boundAtText)
+                    .appFont(.caption)
+                    .foregroundColor(.secondary)
+                    .listRowInsets(insets)
             }
+        }
+    }
+
+    // Build 49：未使用卡行同样改标准表格行——卡号是一行，备注、时长、
+    // 生成于每条各占标准的一行；侧滑挂在卡号那一行上
+    private func unusedRow(_ card: CardItem) -> some View {
+        let insets = EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
+        return Group {
+            HStack {
+                Text(card.code)
+                    .appFont(.footnote, design: .monospaced)
+                Spacer()
+                statusBadge(card)
+            }
+            .listRowInsets(insets)
+            .swipeActions(edge: .trailing) {
+                Button("删除", role: .destructive) { deleteTarget = card }
+                Button(card.disabled ? "启用" : "作废") { Task { await toggle(card) } }
+                    .tint(card.disabled ? .green : .orange)
+                Button("复制") {
+                    UIPasteboard.general.string = card.code
+                    notice = "已复制卡密"
+                }
+            }
+            if !card.remark.isEmpty {
+                Text("备注：" + card.remark)
+                    .appFont(.caption, weight: .medium)
+                    .listRowInsets(insets)
+            }
+            Text(card.daysText)
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+                .listRowInsets(insets)
+            Text("生成于 " + card.createdText)
+                .appFont(.caption)
+                .foregroundColor(.secondary)
+                .listRowInsets(insets)
         }
     }
 
@@ -357,9 +357,6 @@ struct CardsView: View {
             .cornerRadius(6)
     }
 
-    private func detailLine(_ card: CardItem) -> String {
-        "\(card.daysText) · 生成于 \(card.createdText)"
-    }
 
     private func load(force: Bool = false) async {
         do {
