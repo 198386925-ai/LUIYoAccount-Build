@@ -116,6 +116,23 @@ class AccountAPI: ObservableObject {
         patchAccount(email: email) { $0.with(ipFlagged: false) }
     }
 
+    /// 快捷授权（Build 44，账号页侧滑）：后端 admin_svip 直接改过期时间
+    /// （添加 = 永久，取消 = 清零），卡密不动；缓存就地同步
+    func accountSvip(email: String, svip: Bool) async throws {
+        struct SvipResp: Decodable {
+            let ok: Bool
+            let error: String?
+            let svipExpiresAt: Int?
+            enum CodingKeys: String, CodingKey {
+                case ok, error
+                case svipExpiresAt = "svip_expires_at"
+            }
+        }
+        let r: SvipResp = try await post(action: "admin_svip", params: ["email": email, "svip": svip ? "1" : "0"])
+        guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
+        patchAccount(email: email) { $0.with(svip: svip, svipExpiresAt: r.svipExpiresAt ?? (svip ? 4102444800 : 0)) }
+    }
+
     // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
 
     func genCards(count: Int, days: Int, remark: String) async throws -> [String] {

@@ -50,7 +50,7 @@ private struct StretchHeightKey: PreferenceKey {
 }
 
 /// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
-/// + 行侧滑 封禁(带理由)·解封 / 允许越狱开关 / 取消IP标红 / 复制账号
+/// + 行侧滑 封禁(带理由)·解封 / 取消授权·添加授权（Build 44）/ 允许越狱开关 / 取消IP标红 / 复制账号
 /// Build 39：分类下方的「封禁」表单（账号/标题/副标题/原因）和「已封禁」
 /// 列表整块搬去底栏「封禁」页（本文件末尾的 BansView），本页只留账号行
 /// 侧滑里的快捷封禁 / 解封（只带理由，和表单那套标题/副标题文案无关）
@@ -275,6 +275,15 @@ struct AccountsView: View {
             } else {
                 Button("封禁") { banTarget = u; banReason = "" }
                     .tint(.red)
+            }
+            // Build 44：快捷授权——已授权左滑取消授权，未授权左滑添加授权
+            // （后端 admin_svip：添加 = 永久，取消 = 过期清零，卡密不动）
+            if u.svip {
+                Button("取消授权") { run { try await api.accountSvip(email: u.email, svip: false) } }
+                    .tint(.orange)
+            } else {
+                Button("添加授权") { run { try await api.accountSvip(email: u.email, svip: true) } }
+                    .tint(.green)
             }
             if u.allowJailbreak {
                 Button("禁止越狱") { run { try await api.accountJailbreak(email: u.email, allow: false) } }

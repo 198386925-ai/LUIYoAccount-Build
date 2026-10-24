@@ -78,13 +78,14 @@ struct AccountUser: Decodable, Identifiable {
     /// 复制一行并替换给定字段（没传的保持原值）
     func with(isBanned: Bool? = nil, banReason: String? = nil, banTitle: String? = nil,
               banSubtitle: String? = nil, ipFlagged: Bool? = nil,
-              allowJailbreak: Bool? = nil) -> AccountUser {
+              allowJailbreak: Bool? = nil, svip: Bool? = nil,
+              svipExpiresAt: Int? = nil) -> AccountUser {
         AccountUser(id: id, email: email,
                     isBanned: isBanned ?? self.isBanned,
                     banReason: banReason ?? self.banReason,
                     banTitle: banTitle ?? self.banTitle,
                     banSubtitle: banSubtitle ?? self.banSubtitle,
-                    svip: svip, svipExpiresAt: svipExpiresAt,
+                    svip: svip ?? self.svip, svipExpiresAt: svipExpiresAt ?? self.svipExpiresAt,
                     ipFlagged: ipFlagged ?? self.ipFlagged,
                     udid: udid,
                     allowJailbreak: allowJailbreak ?? self.allowJailbreak,

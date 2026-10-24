@@ -32,6 +32,14 @@ struct SettingsView: View {
                     } label: {
                         Label("外观", systemImage: "paintpalette.fill")
                     }
+                    // Build 44：总览从底栏退到这里（和邮件 / 版本管理同一套
+                    // selection 绑定推页）；总览里的数字行跳转走 jumpTab，
+                    // 外壳接住后切 tab
+                    NavigationLink(destination: OverviewView(onJump: { settingsNav.jumpTab = $0 }),
+                                   tag: SettingsPushTarget.overview,
+                                   selection: $settingsNav.route) {
+                        Label("总览", systemImage: "chart.bar.fill")
+                    }
                     NavigationLink(destination: MailLogView(),
                                    tag: SettingsPushTarget.mail,
                                    selection: $settingsNav.route) {

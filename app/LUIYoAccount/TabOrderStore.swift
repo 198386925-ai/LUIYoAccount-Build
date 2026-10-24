@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// 页面标识（共用一套）：总览 / 账号 / 生成卡密 / 封禁 / 设置是底栏
-/// 标签页，顺序由 TabOrderStore 管理；邮件 / 应用更新不是标签页——它们
-/// 是设置页里外观下面的入口行（Build 34 从底栏搬入；Build 39 起应用更新
-/// 入口改名「版本管理」，页内分类切换应用更新 / 版本管理），标识保留给
-/// 全局搜索结果和设置页推送路由用；版本管理（Build 39 退栏，进设置页的
-/// 分类切换）和封禁（Build 39 从账号页搬出成底栏页）都在这里登记；
-/// 总览（Build 43 新增，底栏第一页）
+/// 页面标识（共用一套）：账号 / 生成卡密 / 封禁 / 设置是底栏标签页，
+/// 顺序由 TabOrderStore 管理；总览 / 邮件 / 应用更新不是标签页——它们
+/// 是设置页里的入口行（Build 34 邮件 / 应用更新从底栏搬入；Build 39 起
+/// 应用更新入口改名「版本管理」，页内分类切换应用更新 / 版本管理；
+/// Build 44 总览从底栏退入设置页），标识保留给全局搜索结果和设置页
+/// 推送路由用；版本管理（Build 39 退栏，进设置页的分类切换）和封禁
+/// （Build 39 从账号页搬出成底栏页）都在这里登记
 enum AppTab: String, CaseIterable, Identifiable {
     case overview, accounts, cards, bans, mail, update, versions, settings
 
@@ -50,25 +50,26 @@ enum AppTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 是底栏标签页的五个（邮件 / 应用更新 / 版本管理不是，它们在设置页里）
+    /// 是底栏标签页的四个（总览 / 邮件 / 应用更新 / 版本管理不是，
+    /// 它们在设置页里）
     var isTabPage: Bool {
         switch self {
-        case .overview, .accounts, .cards, .bans, .settings: return true
-        case .mail, .update, .versions: return false
+        case .accounts, .cards, .bans, .settings: return true
+        case .overview, .mail, .update, .versions: return false
         }
     }
 }
 
-/// 底栏顺序仓库：UserDefaults 持久化（tabOrderV1），只管五个标签页的顺序，
-/// 默认 总览/账号/生成卡密/封禁/设置；改动立即写盘，底栏和外观页的
+/// 底栏顺序仓库：UserDefaults 持久化（tabOrderV1），只管四个标签页的顺序，
+/// 默认 账号/生成卡密/封禁/设置；改动立即写盘，底栏和外观页的
 /// 「底栏排序」共用同一份顺序。
 /// Build 34 迁移：老存档里有六页（含已搬进设置页的邮件 / 应用更新）——
 /// 读档时剔除这两个，其余页的相对顺序原样保留，缺的标签页补到末尾。
 /// Build 39 迁移：版本管理退栏、封禁补进它原来的位置——读档时把存档里
 /// 的 versions 原位换成 bans（不是剔除后把封禁补到末尾），其余页的相对
 /// 顺序原样保留。
-/// Build 43 迁移：总览是第一页——老存档里没有它，补到最前面（不是末尾），
-/// 其余页的相对顺序原样保留
+/// Build 44 迁移：总览退栏——老存档里的 overview 由 isTabPage 过滤自动
+/// 剔除（和 Build 34 的邮件 / 应用更新同一套机制），其余页顺序不动
 @MainActor
 final class TabOrderStore: ObservableObject {
     @Published var order: [AppTab] {
@@ -77,7 +78,7 @@ final class TabOrderStore: ObservableObject {
 
     private static let key = "tabOrderV1"
     /// 全部标签页（默认顺序 = 迁移补齐顺序）
-    static let tabPages: [AppTab] = [.overview, .accounts, .cards, .bans, .settings]
+    static let tabPages: [AppTab] = [.accounts, .cards, .bans, .settings]
 
     init() {
         let saved = (UserDefaults.standard.array(forKey: Self.key) as? [String]) ?? []
@@ -86,13 +87,9 @@ final class TabOrderStore: ObservableObject {
             if raw == AppTab.versions.rawValue { return .bans }
             return AppTab(rawValue: raw)
         }.filter { $0.isTabPage }
-        // 去重 + 总览补到最前面 + 其余缺失的标签页补到末尾
-        // （用户自定义的顺序不动）
+        // 去重 + 补齐缺失的标签页（补到末尾，用户自定义的顺序不动）
         var seen = Set<AppTab>()
         list = list.filter { seen.insert($0).inserted }
-        if !list.contains(.overview) {
-            list.insert(.overview, at: 0)
-        }
         for t in Self.tabPages where !list.contains(t) {
             list.append(t)
         }
