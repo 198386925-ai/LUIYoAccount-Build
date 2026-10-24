@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 底栏选择值（Build 34 起底栏就是原生 TabView）：四个页面 tab / 搜索 tab。
+/// 底栏选择值（Build 34 起底栏就是原生 TabView）：五个页面 tab / 搜索 tab。
 /// 没有「更多」/「收起」伪 tab——邮件、应用更新已搬进设置页当入口行
 enum ShellTab: Hashable {
     case page(AppTab)
@@ -23,9 +23,10 @@ final class SettingsNavRouter: ObservableObject {
 
 /// 外壳（Build 34 定版）：原生 SwiftUI TabView——底栏的玻璃、选中态、切换
 /// 全是系统自己的，零自绘栏代码（换组玻璃栏 Build 16–33 的整套机器已删除）：
-/// - 标签页只有四个：账号 / 生成卡密 / 封禁 / 设置，顺序读 TabOrderStore
-///   （外观页里可拖动排序）；外加一个搜索 tab，内容是全局搜索页。
+/// - 标签页只有五个：总览 / 账号 / 生成卡密 / 封禁 / 设置，顺序读
+///   TabOrderStore（外观页里可拖动排序）；外加一个搜索 tab，内容是全局搜索页。
 ///   Build 39：封禁从账号页搬出坐版本管理的旧位置；版本管理退栏。
+///   Build 43：总览是第一页，打开 App 默认落在总览。
 /// - iOS 26：新 Tab 写法，搜索是 Tab(role: .search)——系统的独立搜索圆钮；
 ///   iOS 16–25：经典 tabItem 写法，搜索是普通「搜索」tab（老降级壳同款）。
 /// - 邮件 / 版本管理不在底栏：它们是设置页里外观下面的两个入口行（同一
@@ -37,9 +38,9 @@ struct ContentView: View {
     @StateObject private var tabOrder = TabOrderStore()
     @StateObject private var settingsNav = SettingsNavRouter()
     @State private var autoDone = false
-    @State private var selection: ShellTab = .page(.accounts)
+    @State private var selection: ShellTab = .page(.overview)
     /// 进搜索前所在的 tab：搜索页那颗独立 ✕ 关掉时回到这里
-    @State private var previousTab: ShellTab = .page(.accounts)
+    @State private var previousTab: ShellTab = .page(.overview)
 
     var body: some View {
         Group {
@@ -96,6 +97,7 @@ struct ContentView: View {
     @ViewBuilder
     private func pageView(_ tab: AppTab) -> some View {
         switch tab {
+        case .overview: OverviewView(onJump: { navigateFromSearch($0) })
         case .accounts: AccountsView()
         case .cards: CardsView()
         case .bans: BansView()
@@ -106,7 +108,8 @@ struct ContentView: View {
         }
     }
 
-    /// 标签项的标签：四个标签页全用用户模板图（TabIcon* 资产，系统着色同 SF 符号）
+    /// 标签项的标签：有用户模板图的标签页用它（系统着色同 SF 符号），
+    /// 总览没有模板图、用 SF 符号
     @ViewBuilder
     private func tabLabel(_ tab: AppTab) -> some View {
         if let asset = tab.customIconAsset {
