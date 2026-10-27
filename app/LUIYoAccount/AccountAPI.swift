@@ -171,6 +171,20 @@ class AccountAPI: ObservableObject {
         return (r.email ?? email, r.displayName ?? "")
     }
 
+    /// 后台直接改账号密码（Build 52，设置页注册 / 改密码节）：
+    /// 后端 admin_change_password，不问原密码、不用验证码；
+    /// 账号不存在直接报错；密码显示不受影响，不碰账号缓存
+    func adminChangePassword(email: String, password: String) async throws -> String {
+        struct AdminChangePasswordResp: Decodable {
+            let ok: Bool
+            let error: String?
+            let email: String?
+        }
+        let r: AdminChangePasswordResp = try await post(action: "admin_change_password", params: ["email": email, "password": password])
+        guard r.ok else { throw APIError.server(r.error ?? "修改失败") }
+        return r.email ?? email
+    }
+
     // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
 
     func genCards(count: Int, days: Int, remark: String) async throws -> [String] {

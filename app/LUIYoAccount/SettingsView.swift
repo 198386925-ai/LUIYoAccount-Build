@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var regMsg: String?
     @State private var regMsgIsError = false
     @State private var registering = false
+    @State private var changing = false
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -85,14 +86,16 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    // 注册账号（Build 51）：同服务器卡一套可收起——首行整行
-                    // 可点，展开后是邮箱 / 密码 / 注册按钮；后台直接建号，
-                    // 不走邮箱验证码；按钮在两格都填了之后才能点
+                    // 注册 / 改密码（Build 51 注册，Build 52 加改密码）：
+                    // 同服务器卡一套可收起——首行整行可点，展开后共用
+                    // 邮箱 / 密码两格，下面两个按钮；注册建号，改密码按
+                    // 邮箱找账号直接改；都不用验证码；按钮在两格都填了
+                    // 之后才能点
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { registerExpanded.toggle() }
                     } label: {
                         HStack {
-                            Text("注册账号")
+                            Text("注册 / 改密码")
                                 .foregroundColor(.primary)
                             Spacer()
                             Image(systemName: registerExpanded ? "chevron.up" : "chevron.down")
@@ -108,16 +111,36 @@ struct SettingsView: View {
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                         SecureField("密码（至少6位）", text: $regPassword)
-                        Button("注册账号") {
+                        Button {
                             Task { await registerAccount() }
+                        } label: {
+                            Text("注册账号")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
                         }
-                        .disabled(regEmail.trimmingCharacters(in: .whitespaces).isEmpty || regPassword.isEmpty || registering)
+                        .buttonStyle(.plain)
+                        .disabled(regEmail.trimmingCharacters(in: .whitespaces).isEmpty || regPassword.isEmpty || registering || changing)
+                        Button {
+                            Task { await changePasswordAccount() }
+                        } label: {
+                            Text("修改密码")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color(.systemGray5))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(regEmail.trimmingCharacters(in: .whitespaces).isEmpty || regPassword.isEmpty || registering || changing)
                         if let regMsg {
                             Text(regMsg)
                                 .font(.footnote)
                                 .foregroundColor(regMsgIsError ? .red : .green)
                         }
-                        Text("后台直接建号，不用邮箱验证码；建好就能登录。")
+                        Text("共用上面两格：注册建号，改密码按邮箱找账号直接改。")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
@@ -145,6 +168,21 @@ struct SettingsView: View {
         do {
             let r = try await api.adminRegister(email: regEmail.trimmingCharacters(in: .whitespaces), password: regPassword)
             regMsg = "已创建：" + r.email + (r.displayName.isEmpty ? "" : "（" + r.displayName + "）")
+            regMsgIsError = false
+            regEmail = ""
+            regPassword = ""
+        } catch {
+            regMsg = error.localizedDescription
+            regMsgIsError = true
+        }
+    }
+
+    private func changePasswordAccount() async {
+        changing = true
+        defer { changing = false }
+        do {
+            let email = try await api.adminChangePassword(email: regEmail.trimmingCharacters(in: .whitespaces), password: regPassword)
+            regMsg = "密码已修改：" + email
             regMsgIsError = false
             regEmail = ""
             regPassword = ""
