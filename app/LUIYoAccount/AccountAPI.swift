@@ -151,6 +151,26 @@ class AccountAPI: ObservableObject {
         patchAccount(email: email) { $0.with(svip: true, svipExpiresAt: r.svipExpiresAt ?? 4102444800) }
     }
 
+    /// 后台直接注册账号（Build 51，设置页）：后端 admin_register，
+    /// 不走邮箱验证码；成功后账号缓存失效，账号页下次打开重拉
+    /// 就能看到新号；老后端没有这个动作会直接报错
+    func adminRegister(email: String, password: String) async throws -> (email: String, displayName: String) {
+        struct AdminRegisterResp: Decodable {
+            let ok: Bool
+            let error: String?
+            let email: String?
+            let displayName: String?
+            enum CodingKeys: String, CodingKey {
+                case ok, error, email
+                case displayName = "display_name"
+            }
+        }
+        let r: AdminRegisterResp = try await post(action: "admin_register", params: ["email": email, "password": password])
+        guard r.ok else { throw APIError.server(r.error ?? "注册失败") }
+        accountsCache = nil
+        return (r.email ?? email, r.displayName ?? "")
+    }
+
     // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
 
     func genCards(count: Int, days: Int, remark: String) async throws -> [String] {

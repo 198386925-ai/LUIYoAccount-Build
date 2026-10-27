@@ -15,6 +15,13 @@ struct SettingsView: View {
     /// 服务器卡收起/展开：卡内首行「服务器」整行可点切换；
     /// Build 38 起默认收起——每次新进设置页都是收起状态
     @State private var serverExpanded = false
+    /// 注册账号卡收起/展开：同服务器卡一套（默认收起，首行整行可点）
+    @State private var registerExpanded = false
+    @State private var regEmail = ""
+    @State private var regPassword = ""
+    @State private var regMsg: String?
+    @State private var regMsgIsError = false
+    @State private var registering = false
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -78,6 +85,44 @@ struct SettingsView: View {
                     }
                 }
                 Section {
+                    // 注册账号（Build 51）：同服务器卡一套可收起——首行整行
+                    // 可点，展开后是邮箱 / 密码 / 注册按钮；后台直接建号，
+                    // 不走邮箱验证码；按钮在两格都填了之后才能点
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { registerExpanded.toggle() }
+                    } label: {
+                        HStack {
+                            Text("注册账号")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: registerExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if registerExpanded {
+                        TextField("邮箱", text: $regEmail)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        SecureField("密码（至少6位）", text: $regPassword)
+                        Button("注册账号") {
+                            Task { await registerAccount() }
+                        }
+                        .disabled(regEmail.trimmingCharacters(in: .whitespaces).isEmpty || regPassword.isEmpty || registering)
+                        if let regMsg {
+                            Text(regMsg)
+                                .font(.footnote)
+                                .foregroundColor(regMsgIsError ? .red : .green)
+                        }
+                        Text("后台直接建号，不用邮箱验证码；建好就能登录。")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Section {
                     LabeledContent("版本", value: versionText)
                     LabeledContent("登录状态", value: api.loggedIn ? "已登录（密码已保存，自动登录）" : "未登录")
                 } header: {
@@ -91,6 +136,21 @@ struct SettingsView: View {
             }
             .compactSectionSpacing()
             .navigationTitle("设置")
+        }
+    }
+
+    private func registerAccount() async {
+        registering = true
+        defer { registering = false }
+        do {
+            let r = try await api.adminRegister(email: regEmail.trimmingCharacters(in: .whitespaces), password: regPassword)
+            regMsg = "已创建：" + r.email + (r.displayName.isEmpty ? "" : "（" + r.displayName + "）")
+            regMsgIsError = false
+            regEmail = ""
+            regPassword = ""
+        } catch {
+            regMsg = error.localizedDescription
+            regMsgIsError = true
         }
     }
 }
