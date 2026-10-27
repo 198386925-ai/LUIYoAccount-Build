@@ -133,6 +133,24 @@ class AccountAPI: ObservableObject {
         patchAccount(email: email) { $0.with(svip: svip, svipExpiresAt: r.svipExpiresAt ?? (svip ? 4102444800 : 0)) }
     }
 
+    /// 卡密授权（Build 50，授权卡 + 侧滑添加授权）：后端 admin_svip_card
+    /// 卡密必填，按卡面天数开通并绑定卡密（永久卡 = 永久）；老后端没有
+    /// 这个动作会直接报错，不会悄悄按永久开通；缓存就地同步
+    func accountSvipCard(email: String, card: String) async throws {
+        struct SvipCardResp: Decodable {
+            let ok: Bool
+            let error: String?
+            let svipExpiresAt: Int?
+            enum CodingKeys: String, CodingKey {
+                case ok, error
+                case svipExpiresAt = "svip_expires_at"
+            }
+        }
+        let r: SvipCardResp = try await post(action: "admin_svip_card", params: ["email": email, "card": card])
+        guard r.ok else { throw APIError.server(r.error ?? "操作失败") }
+        patchAccount(email: email) { $0.with(svip: true, svipExpiresAt: r.svipExpiresAt ?? 4102444800) }
+    }
+
     // MARK: - 卡密管理（生成 / 列表 / 作废，用户在主 App 里绑卡开通 SVIP）
 
     func genCards(count: Int, days: Int, remark: String) async throws -> [String] {

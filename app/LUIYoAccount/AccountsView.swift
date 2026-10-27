@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Build 46：全部可折叠改标准表格行（总览同款）——标题行是一行，点开后每条明细就是标准的一行，收放走设置页服务器卡同款 if + withAnimation；拉伸容器已撤掉。
+/// Build 50：账号页顶部授权卡（邮箱 + 卡密，卡密必填，空着授权按钮不可点）+ 侧滑添加授权改弹卡密框（走 admin_svip_card，按卡面天数开通）；取消授权仍走 admin_svip 不变。
 
 /// 邮箱账号管理：分组卡片列表（全部=已授权/未授权两张分组卡；切到分类=一个账号一张卡）
 /// + 行侧滑 封禁(带理由)·解封 / 取消授权·添加授权（Build 44）/ 允许越狱开关 / 取消IP标红 / 复制账号
@@ -32,6 +33,12 @@ struct AccountsView: View {
     @State private var filter: AccountFilter = .all
     /// 账号卡收起/展开（Build 35）：按邮箱记展开状态，默认全收起
     @State private var expandedAccounts: Set<String> = []
+    /// 授权卡输入（Build 50）：账号页顶部填邮箱 + 卡密开通
+    @State private var grantEmail = ""
+    @State private var grantCard = ""
+    /// 侧滑添加授权的卡密框（Build 50）：卡密必填
+    @State private var svipCardTarget: AccountUser?
+    @State private var svipCard = ""
 
     enum AccountFilter: String, CaseIterable {
         case all = "全部"
@@ -71,6 +78,33 @@ struct AccountsView: View {
                     ProgressView()
                 } else {
                     Form {
+                        // Build 50：授权卡——填邮箱 + 卡密开通，卡密空着
+                        // 授权按钮不可点；成功后清掉输入并整表重拉
+                        Section {
+                            TextField("邮箱账号", text: $grantEmail)
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                            TextField("卡密", text: $grantCard)
+                                .textInputAutocapitalization(.never)
+                            Button("授权") {
+                                let email = grantEmail.trimmingCharacters(in: .whitespaces)
+                                let card = grantCard.trimmingCharacters(in: .whitespaces)
+                                Task {
+                                    do {
+                                        try await api.accountSvipCard(email: email, card: card)
+                                        grantEmail = ""
+                                        grantCard = ""
+                                        notice = "已授权"
+                                        await reload(force: true)
+                                    } catch {
+                                        if !error.isCancelError { self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+                                    }
+                                }
+                            }
+                            .disabled(grantEmail.trimmingCharacters(in: .whitespaces).isEmpty || grantCard.trimmingCharacters(in: .whitespaces).isEmpty)
+                        } header: {
+                            AppSectionHeader("授权")
+                        }
                         Section {
                             PillSegmented(options: [("all", "全部"), ("svip", "已授权"), ("free", "未授权")],
                                           selection: filterBinding)
@@ -149,6 +183,24 @@ struct AccountsView: View {
             } message: {
                 if let u = banTarget { Text("封禁 \(u.email)？30 秒内在用户 App 生效。") }
             }
+            // Build 50：侧滑添加授权的卡密框——卡密空着不提交
+            .alert("添加授权", isPresented: .constant(svipCardTarget != nil)) {
+                TextField("卡密", text: $svipCard)
+                Button("授权") {
+                    if let u = svipCardTarget {
+                        let card = svipCard.trimmingCharacters(in: .whitespaces)
+                        svipCardTarget = nil
+                        if card.isEmpty {
+                            error = "请填写卡密"
+                        } else {
+                            run { try await api.accountSvipCard(email: u.email, card: card) }
+                        }
+                    }
+                }
+                Button("取消", role: .cancel) { svipCardTarget = nil }
+            } message: {
+                if let u = svipCardTarget { Text("给 \(u.email) 填卡密开通，按卡面天数生效。") }
+            }
         }
     }
 
@@ -206,7 +258,8 @@ struct AccountsView: View {
                 Button("取消授权") { run { try await api.accountSvip(email: u.email, svip: false) } }
                     .tint(.orange)
             } else {
-                Button("添加授权") { run { try await api.accountSvip(email: u.email, svip: true) } }
+                // Build 50：侧滑添加授权改弹卡密框，卡密必填（走 admin_svip_card）
+                Button("添加授权") { svipCardTarget = u; svipCard = "" }
                     .tint(.green)
             }
             if u.allowJailbreak {

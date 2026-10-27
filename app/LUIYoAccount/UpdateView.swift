@@ -133,29 +133,26 @@ struct UpdateView: View {
                         let hasNotes = !v.notes.isEmpty
                         let insets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
                         // Build 46：历史版本行改标准表格行（总览同款）——标题行
-                        // 是一行，发布于和说明点开后各占标准的一行；收起时仍
-                        // 显示版本号 · Build + 发布于（Build 41 口径不变）
+                        // 是一行，发布于和说明点开后各占标准的一行。
+                        // Build 50：每条都有箭头、都能收起展开——收起只剩
+                        // 版本号 · Build 一行，点开才显示发布于和说明
                         Group {
                             HStack(alignment: .center, spacing: 10) {
                                 Text("\(v.version) · Build \(v.build)")
                                     .appFont(.headline)
                                 Spacer(minLength: 6)
-                                if hasNotes {
-                                    Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                                        .appFont(.caption, weight: .semibold)
-                                        .foregroundColor(.secondary)
-                                }
+                                Image(systemName: isOpen ? "chevron.up" : "chevron.down")
+                                    .appFont(.caption, weight: .semibold)
+                                    .foregroundColor(.secondary)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if hasNotes {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        if isOpen { expandedHistory.remove(v.build) } else { expandedHistory.insert(v.build) }
-                                    }
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if isOpen { expandedHistory.remove(v.build) } else { expandedHistory.insert(v.build) }
                                 }
                             }
                             .listRowInsets(insets)
-                            if v.publishedAt > 0 {
+                            if v.publishedAt > 0 && isOpen {
                                 Text("发布于 " + v.publishedText)
                                     .appFont(.caption2)
                                     .foregroundColor(.secondary)
